@@ -53,3 +53,7 @@ class GenerationTask(Base):
     # --- error ---
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # --- batch ---
+    name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    local_path: Mapped[str | None] = mapped_column(String, nullable=True)

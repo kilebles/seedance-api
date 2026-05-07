@@ -65,18 +65,18 @@ def _list_tasks() -> list[dict]:
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-st.set_page_config(page_title="Seedance", page_icon="🎬", layout="wide")
-st.title("Seedance 2.0 Fast — Video Generation")
+st.set_page_config(page_title="HistoryDoc SeeDance", layout="wide")
+st.title("HistoryDoc SeeDance")
 
-tab_generate, tab_history = st.tabs(["Generate", "History"])
+tab_generate, tab_batch, tab_history = st.tabs(["Generate", "Batch", "History"])
 
 # ── Generate tab ──────────────────────────────────────────────────────────────
 with tab_generate:
     with st.form("generate_form"):
-        prompt = st.text_area("Prompt", height=100, placeholder="Describe the video...")
+        prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...")
 
         uploaded = st.file_uploader(
-            "First frame image (optional)",
+            "Первый кадр (необязательно)",
             type=["jpg", "jpeg", "png", "webp"],
         )
 
@@ -84,7 +84,7 @@ with tab_generate:
         with col1:
             ratio = st.selectbox(
                 "Aspect ratio",
-                ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+                ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
             )
         with col2:
             resolution = st.selectbox("Resolution", ["720p", "480p"])
@@ -173,6 +173,112 @@ with tab_generate:
                     break
 
                 time.sleep(POLL_INTERVAL)
+
+# ── Batch tab ─────────────────────────────────────────────────────────────────
+with tab_batch:
+    st.markdown("Загрузите xlsx-файл с колонками `number`, `prompt`. Видео будут сохранены на сервере в `output/{проект}/{серия}/{номер}/`.")
+
+    with st.form("batch_form"):
+        xlsx_file = st.file_uploader("xlsx-файл (например seedance_entire_001.xlsx)", type=["xlsx"])
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            b_ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], key="b_ratio")
+        with col2:
+            b_resolution = st.selectbox("Resolution", ["720p", "480p"], key="b_resolution")
+        with col3:
+            b_duration = st.selectbox(
+                "Duration (s)",
+                [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                index=4,
+                format_func=lambda x: f"{x}s",
+                key="b_duration",
+            )
+        b_audio = st.checkbox("Generate audio", value=True, key="b_audio")
+        batch_submitted = st.form_submit_button("Start batch", type="primary")
+
+    if batch_submitted:
+        if not xlsx_file:
+            st.error("Please upload an xlsx file.")
+        else:
+            with st.spinner("Submitting batch..."):
+                try:
+                    resp = httpx.post(
+                        f"{API_BASE}/generations/batch",
+                        files={"file": (xlsx_file.name, xlsx_file.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                        data={
+                            "ratio": b_ratio,
+                            "resolution": b_resolution,
+                            "duration": str(b_duration),
+                            "generate_audio": str(b_audio).lower(),
+                        },
+                        timeout=60,
+                    )
+                    resp.raise_for_status()
+                    tasks = resp.json()
+                except Exception as e:
+                    st.error(f"Failed to submit batch: {e}")
+                    tasks = []
+
+            if tasks:
+                st.success(f"Батч отправлен: {len(tasks)} задач в очереди")
+                st.session_state["batch_task_ids"] = [t["id"] for t in tasks]
+                st.session_state["batch_names"] = {t["id"]: t.get("name", t["id"][:8]) for t in tasks}
+                # Derive output_dir from first task's local_path
+                first_path = tasks[0].get("local_path", "")
+                st.session_state["batch_output_dir"] = "/".join(first_path.split("/")[:-1]) if first_path else ""
+
+    # Show batch progress if we have tasks
+    if "batch_task_ids" in st.session_state:
+        task_ids = st.session_state["batch_task_ids"]
+        names = st.session_state["batch_names"]
+        output_dir = st.session_state.get("batch_output_dir", "")
+
+        col_r, col_p, col_res, col_c = st.columns(4)
+        with col_r:
+            if st.button("Refresh", key="batch_refresh"):
+                st.rerun()
+        with col_p:
+            if st.button("Pause", key="batch_pause"):
+                httpx.post(f"{API_BASE}/generations/batch/pause", params={"output_dir": output_dir}, timeout=10)
+                st.rerun()
+        with col_res:
+            if st.button("Resume", key="batch_resume"):
+                httpx.post(f"{API_BASE}/generations/batch/resume", params={"output_dir": output_dir}, timeout=10)
+                st.rerun()
+        with col_c:
+            if st.button("Cancel", key="batch_cancel", type="primary"):
+                httpx.post(f"{API_BASE}/generations/batch/cancel", params={"output_dir": output_dir}, timeout=10)
+                st.rerun()
+
+        STATUS_ICON = {"queued": "⏳", "running": "⚙️", "succeeded": "✅", "failed": "❌", "expired": "🕐", "paused": "⏸️"}
+
+        rows = []
+        all_done = True
+        for tid in task_ids:
+            try:
+                t = _get_task(tid)
+            except Exception:
+                t = {"id": tid, "status": "?"}
+            s = t.get("status", "?")
+            if s not in ("succeeded", "failed", "expired", "paused"):
+                all_done = False
+            rows.append({
+                "name": names.get(tid, tid[:8]),
+                "status": f"{STATUS_ICON.get(s, '')} {s}",
+                "local_path": t.get("local_path") or "—",
+                "error": t.get("error_message") or "",
+            })
+
+        st.dataframe(rows, use_container_width=True)
+
+        done = sum(1 for r in rows if any(x in r["status"] for x in ("✅", "❌", "🕐")))
+        st.progress(done / len(rows))
+        st.caption(f"Готово: {done}/{len(rows)}")
+
+        if all_done and done == len(rows):
+            st.success("Батч завершён! Видео сохранены на сервере.")
+
 
 # ── History tab ───────────────────────────────────────────────────────────────
 with tab_history:

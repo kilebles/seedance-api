@@ -41,7 +41,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=0
 
 # Logs go to stdout/stderr in prod; keep dir for file sink if needed
-RUN mkdir -p /app/logs && chown app:app /app/logs
+RUN mkdir -p /app/logs /app/output && chown app:app /app/logs /app/output
 
 USER app
 

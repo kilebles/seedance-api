@@ -16,7 +16,6 @@ class AspectRatio(str, Enum):
     ratio_4_3 = "4:3"
     ratio_3_4 = "3:4"
     ratio_21_9 = "21:9"
-    adaptive = "adaptive"
 
 
 class Resolution(str, Enum):
@@ -33,7 +32,7 @@ class GenerationRequest(BaseModel):
         description="Ordered list of content items (text prompt + optional media references)"
     )
     generate_audio: bool = Field(default=True)
-    ratio: AspectRatio = Field(default=AspectRatio.adaptive)
+    ratio: AspectRatio = Field(default=AspectRatio.ratio_16_9)
     resolution: Resolution = Field(default=Resolution.p720)
     # [4, 15] seconds, or -1 for smart selection
     duration: int | None = Field(default=None, ge=-1, le=15)
@@ -122,3 +121,7 @@ class TaskDB(BaseModel):
     # error
     error_code: str | None
     error_message: str | None
+
+    # batch
+    name: str | None = None
+    local_path: str | None = None

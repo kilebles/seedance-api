@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.repositories import generation as generation_repo
 from src.schemas.generation import GenerationRequest, TaskDB
-from src.services import seedance_client
 
 router = APIRouter(prefix="/generations", tags=["generations"])
 
@@ -44,32 +41,8 @@ async def create_task(
     )
 
     user_id = await _get_admin_user_id(db)
-
-    # Persist to DB first
     task = await generation_repo.create(db, user_id=user_id, request=body)
-    logger.debug("Task saved to DB | id={id}", id=task.id)
-
-    # Submit to BytePlus
-    try:
-        byteplus_task = await seedance_client.submit_generation(body)
-    except httpx.HTTPStatusError as exc:
-        await generation_repo.update(db, task.id, status="failed", error_message=exc.response.text)
-        logger.warning("Upstream HTTP error | status={s} body={b}", s=exc.response.status_code, b=exc.response.text)
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
-    except httpx.RequestError as exc:
-        await generation_repo.update(db, task.id, status="failed", error_message=str(exc))
-        logger.error("Upstream request error | {exc}", exc=exc)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
-    # Update with BytePlus task ID
-    task = await generation_repo.update(
-        db,
-        task.id,
-        external_id=byteplus_task.id,
-        status="running",
-        submitted_at=datetime.now(timezone.utc),
-    )
-    logger.info("Task submitted to BytePlus | id={id} external_id={ext}", id=task.id, ext=task.external_id)
+    logger.info("Task queued | id={id}", id=task.id)
 
     return TaskDB.model_validate(task)
 

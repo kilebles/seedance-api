@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     # Background worker
     worker_poll_interval: int = 10  # seconds
+    seedance_max_concurrent: int = 10  # max tasks running in BytePlus at once
 
     model_config = {"env_file": ".env"}
 

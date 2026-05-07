@@ -9,6 +9,7 @@ from loguru import logger
 import bcrypt
 
 from src.api.routes.generations import router as generations_router
+from src.api.routes.batch import router as batch_router
 from src.core.database import AsyncSessionLocal, engine
 from src.core.logging import setup_logging
 from src.core.settings import settings
@@ -66,6 +67,7 @@ app = FastAPI(
 )
 
 app.include_router(generations_router)
+app.include_router(batch_router)
 
 _NOISY_PATHS = {"/docs", "/openapi.json", "/redoc", "/health"}
 

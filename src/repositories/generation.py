@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.generation import GenerationTask
@@ -25,7 +25,13 @@ def _content_items_meta(request: GenerationRequest) -> list[dict]:
     return items
 
 
-async def create(db: AsyncSession, user_id: uuid.UUID, request: GenerationRequest) -> GenerationTask:
+async def create(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    request: GenerationRequest,
+    name: str | None = None,
+    local_path: str | None = None,
+) -> GenerationTask:
     task = GenerationTask(
         user_id=user_id,
         model=request.model,
@@ -37,6 +43,8 @@ async def create(db: AsyncSession, user_id: uuid.UUID, request: GenerationReques
         seed_requested=request.seed,
         content_items=_content_items_meta(request),
         status="queued",
+        name=name,
+        local_path=local_path,
     )
     db.add(task)
     await db.commit()
@@ -61,10 +69,42 @@ async def get(db: AsyncSession, task_id: uuid.UUID) -> GenerationTask | None:
 
 
 async def list_pending(db: AsyncSession) -> list[GenerationTask]:
-    """Return all tasks that still need polling (have external_id and are not terminal)."""
+    """Tasks submitted to BytePlus that need status polling."""
     result = await db.execute(
         select(GenerationTask)
         .where(GenerationTask.external_id.is_not(None))
-        .where(GenerationTask.status.in_(["queued", "running"]))
+        .where(GenerationTask.status.in_(["running"]))
     )
     return list(result.scalars().all())
+
+
+async def count_running(db: AsyncSession) -> int:
+    """Number of tasks currently submitted to BytePlus (running)."""
+    result = await db.execute(
+        select(func.count()).where(GenerationTask.status == "running")
+    )
+    return result.scalar_one()
+
+
+async def list_queued(db: AsyncSession, limit: int) -> list[GenerationTask]:
+    """Tasks waiting to be submitted to BytePlus, oldest first."""
+    result = await db.execute(
+        select(GenerationTask)
+        .where(GenerationTask.status == "queued")
+        .order_by(GenerationTask.created_at.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def set_batch_status(db: AsyncSession, output_dir: str, from_statuses: list[str], to_status: str) -> int:
+    """Update status for all tasks in a batch (matched by local_path prefix). Returns count."""
+    from sqlalchemy import update
+    result = await db.execute(
+        update(GenerationTask)
+        .where(GenerationTask.local_path.like(f"{output_dir}/%"))
+        .where(GenerationTask.status.in_(from_statuses))
+        .values(status=to_status)
+    )
+    await db.commit()
+    return result.rowcount
