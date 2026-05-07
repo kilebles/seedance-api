@@ -1,0 +1,27 @@
+# Version control
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.py[oc]
+*.egg-info
+
+# Dev/test
+.pytest_cache
+.claude
+*.md
+
+# Local env (injected at runtime)
+.env
+
+# Build artifacts
+dist/
+build/
+
+# Logs and output
+logs/
+*.mp4
+response.json
+output.mp4

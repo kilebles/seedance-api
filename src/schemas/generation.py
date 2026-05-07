@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .content import ContentItem
 
@@ -63,6 +65,7 @@ class TaskContent(BaseModel):
     last_frame_image_url: str | None = None
 
 
+# Raw BytePlus API response — used internally by seedance_client
 class TaskResultResponse(BaseModel):
     id: str
     status: TaskStatus
@@ -70,7 +73,6 @@ class TaskResultResponse(BaseModel):
     created_at: int | None = None
     updated_at: int | None = None
     content: TaskContent | None = None
-    # video specs (top-level in API response)
     ratio: str | None = None
     resolution: str | None = None
     duration: int | None = None
@@ -78,3 +80,45 @@ class TaskResultResponse(BaseModel):
     seed: int | None = None
     generate_audio: bool | None = None
     error: dict | None = None
+
+
+# API response schema backed by our DB record
+class TaskDB(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    external_id: str | None
+    user_id: uuid.UUID
+
+    # input
+    model: str
+    ratio_requested: str
+    resolution_requested: str
+    duration_requested: int | None
+    generate_audio: bool
+    watermark: bool
+    seed_requested: int | None
+    content_items: list
+
+    # lifecycle
+    status: str
+    submitted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    # result
+    video_url: str | None
+    last_frame_url: str | None
+    duration_actual: int | None
+    ratio_actual: str | None
+    resolution_actual: str | None
+    seed_actual: int | None
+    framespersecond: int | None
+
+    # billing
+    completion_tokens: int | None
+    total_tokens: int | None
+
+    # error
+    error_code: str | None
+    error_message: str | None
