@@ -64,6 +64,11 @@ class TaskContent(BaseModel):
     last_frame_image_url: str | None = None
 
 
+class TaskUsage(BaseModel):
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 # Raw BytePlus API response — used internally by seedance_client
 class TaskResultResponse(BaseModel):
     id: str
@@ -78,6 +83,7 @@ class TaskResultResponse(BaseModel):
     framespersecond: int | None = None
     seed: int | None = None
     generate_audio: bool | None = None
+    usage: TaskUsage | None = None
     error: dict | None = None
 
 
@@ -125,3 +131,5 @@ class TaskDB(BaseModel):
     # batch
     name: str | None = None
     local_path: str | None = None
+    batch_id: str | None = None
+    batch_order: int | None = None

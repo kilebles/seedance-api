@@ -40,9 +40,31 @@ async def create_task(
         n=len(body.content),
     )
 
+    from datetime import datetime, timezone
+    from src.services import seedance_client
+
     user_id = await _get_admin_user_id(db)
-    task = await generation_repo.create(db, user_id=user_id, request=body)
-    logger.info("Task queued | id={id}", id=task.id)
+
+    # If any content item contains base64, submit to BytePlus immediately —
+    # base64 is stripped before saving to DB so it can't be replayed by the worker.
+    has_base64 = any(
+        getattr(getattr(item, key, None), "url", "").startswith("data:")
+        for item in body.content
+        for key in ("image_url", "video_url", "audio_url")
+    )
+
+    if has_base64:
+        byteplus_task = await seedance_client.submit_generation(body)
+        task = await generation_repo.create(
+            db, user_id=user_id, request=body,
+            external_id=byteplus_task.id,
+            status="running",
+            submitted_at=datetime.now(timezone.utc),
+        )
+        logger.info("Task submitted immediately | id={id} ext={ext}", id=task.id, ext=byteplus_task.id)
+    else:
+        task = await generation_repo.create(db, user_id=user_id, request=body)
+        logger.info("Task queued | id={id}", id=task.id)
 
     return TaskDB.model_validate(task)
 

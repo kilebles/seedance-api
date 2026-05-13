@@ -42,18 +42,15 @@ async def _submit_queued() -> None:
     logger.debug("Worker: submitting {n} queued task(s) ({slots} slots free)", n=len(queued), slots=slots)
 
     from datetime import datetime, timezone
+    from src.schemas.generation import AspectRatio, GenerationRequest, Resolution
+
+    from pydantic import TypeAdapter
+    from src.schemas.content import ContentItem
+    content_adapter = TypeAdapter(list[ContentItem])
 
     for task in queued:
-        # Rebuild GenerationRequest from stored data to submit
-        from src.schemas.generation import AspectRatio, GenerationRequest, Resolution
-        from src.schemas.content import TextContent
-
-        # Extract text prompt from stored content_items
-        text_items = [i["text"] for i in (task.content_items or []) if i.get("type") == "text"]
-        prompt = text_items[0] if text_items else ""
-
         request = GenerationRequest(
-            content=[TextContent(type="text", text=prompt)],
+            content=content_adapter.validate_python(task.content_items or []),
             ratio=AspectRatio(task.ratio_requested),
             resolution=Resolution(task.resolution_requested),
             duration=task.duration_requested,
@@ -66,8 +63,17 @@ async def _submit_queued() -> None:
             byteplus_task = await seedance_client.submit_generation(request)
         except Exception as exc:
             logger.error("Worker: failed to submit task {id} — {exc}", id=task.id, exc=exc)
+            error_code, error_message = None, str(exc)
+            if hasattr(exc, "response"):
+                try:
+                    body = exc.response.json()
+                    err = body.get("error", {})
+                    error_code = err.get("code")
+                    error_message = err.get("message", str(exc))
+                except Exception:
+                    pass
             async with AsyncSessionLocal() as db:
-                await generation_repo.update(db, task.id, status="failed", error_message=str(exc))
+                await generation_repo.update(db, task.id, status="failed", error_code=error_code, error_message=error_message)
             continue
 
         async with AsyncSessionLocal() as db:
@@ -109,6 +115,8 @@ async def _poll_running() -> None:
                 resolution_actual=result.resolution,
                 seed_actual=result.seed,
                 framespersecond=result.framespersecond,
+                completion_tokens=result.usage.completion_tokens if result.usage else None,
+                total_tokens=result.usage.total_tokens if result.usage else None,
             )
             logger.success(
                 "Worker: task {name} succeeded | duration={dur}s ratio={ratio}",

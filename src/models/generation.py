@@ -57,3 +57,5 @@ class GenerationTask(Base):
     # --- batch ---
     name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     local_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    batch_order: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

@@ -176,10 +176,10 @@ with tab_generate:
 
 # ── Batch tab ─────────────────────────────────────────────────────────────────
 with tab_batch:
-    st.markdown("Загрузите xlsx-файл с колонками `number`, `prompt`. Видео будут сохранены на сервере в `output/{проект}/{серия}/{номер}/`.")
+    st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
 
     with st.form("batch_form"):
-        xlsx_file = st.file_uploader("xlsx-файл (например seedance_entire_001.xlsx)", type=["xlsx"])
+        xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"])
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -224,7 +224,6 @@ with tab_batch:
                 st.success(f"Батч отправлен: {len(tasks)} задач в очереди")
                 st.session_state["batch_task_ids"] = [t["id"] for t in tasks]
                 st.session_state["batch_names"] = {t["id"]: t.get("name", t["id"][:8]) for t in tasks}
-                # Derive output_dir from first task's local_path
                 first_path = tasks[0].get("local_path", "")
                 st.session_state["batch_output_dir"] = "/".join(first_path.split("/")[:-1]) if first_path else ""
 
@@ -267,7 +266,7 @@ with tab_batch:
                 "name": names.get(tid, tid[:8]),
                 "status": f"{STATUS_ICON.get(s, '')} {s}",
                 "local_path": t.get("local_path") or "—",
-                "error": t.get("error_message") or "",
+                "error": t.get("error_code") or t.get("error_message") or "",
             })
 
         st.dataframe(rows, use_container_width=True)

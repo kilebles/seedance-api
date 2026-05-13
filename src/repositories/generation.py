@@ -11,7 +11,9 @@ from src.schemas.generation import GenerationRequest
 
 
 def _content_items_meta(request: GenerationRequest) -> list[dict]:
-    """Strip base64 payloads, keep only type/role/url metadata."""
+    """Strip base64 payloads, keep only type/role/url metadata.
+    yadisk_image items are stored as-is (no base64 to strip).
+    """
     items = []
     for item in request.content:
         d = item.model_dump(mode="json")
@@ -31,6 +33,11 @@ async def create(
     request: GenerationRequest,
     name: str | None = None,
     local_path: str | None = None,
+    external_id: str | None = None,
+    status: str = "queued",
+    submitted_at: datetime | None = None,
+    batch_id: str | None = None,
+    batch_order: int | None = None,
 ) -> GenerationTask:
     task = GenerationTask(
         user_id=user_id,
@@ -42,9 +49,13 @@ async def create(
         watermark=request.watermark,
         seed_requested=request.seed,
         content_items=_content_items_meta(request),
-        status="queued",
+        status=status,
         name=name,
         local_path=local_path,
+        external_id=external_id,
+        submitted_at=submitted_at,
+        batch_id=batch_id,
+        batch_order=batch_order,
     )
     db.add(task)
     await db.commit()
@@ -87,10 +98,31 @@ async def count_running(db: AsyncSession) -> int:
 
 
 async def list_queued(db: AsyncSession, limit: int) -> list[GenerationTask]:
-    """Tasks waiting to be submitted to BytePlus, oldest first."""
+    """Tasks waiting to be submitted to BytePlus, oldest first.
+
+    For batched tasks: only picks from the lowest batch_order batch that still
+    has active (queued or running) tasks — so batches run sequentially FIFO.
+    Non-batched tasks (batch_id IS NULL) are always eligible.
+    """
+    from sqlalchemy import and_, or_
+
+    # Find the lowest batch_order among batches that still have active tasks
+    active_batch_sq = (
+        select(func.min(GenerationTask.batch_order))
+        .where(GenerationTask.batch_id.is_not(None))
+        .where(GenerationTask.status.in_(["queued", "running"]))
+        .scalar_subquery()
+    )
+
     result = await db.execute(
         select(GenerationTask)
         .where(GenerationTask.status == "queued")
+        .where(
+            or_(
+                GenerationTask.batch_id.is_(None),
+                GenerationTask.batch_order == active_batch_sq,
+            )
+        )
         .order_by(GenerationTask.created_at.asc())
         .limit(limit)
     )
