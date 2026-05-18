@@ -13,6 +13,7 @@ from src.core.settings import settings
 # Import models so Alembic can detect them
 import src.models.user  # noqa: F401
 import src.models.generation  # noqa: F401
+import src.models.enhance  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

@@ -5,16 +5,111 @@
 from __future__ import annotations
 
 import base64
+import io
+import os
 import time
+import zipfile
+from pathlib import Path
 
 import httpx
 import streamlit as st
 
 API_BASE = "http://api:8000"
 POLL_INTERVAL = 3  # seconds between status checks
+OUTPUT_DIR = Path("/app/output")
+YADISK_TOKEN = os.environ.get("YANDEX_DISK_TOKEN", "")
+YADISK_API = "https://cloud-api.yandex.net/v1/disk/resources"
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+# ── Yandex Disk helpers ───────────────────────────────────────────────────────
+
+def _yadisk_headers() -> dict:
+    return {"Authorization": f"OAuth {YADISK_TOKEN}"}
+
+
+def _yadisk_create_folder(path: str) -> bool:
+    r = httpx.put(YADISK_API, headers=_yadisk_headers(), params={"path": path}, timeout=30)
+    return r.status_code in (201, 409)
+
+
+def _yadisk_get_upload_url(remote_path: str) -> str | None:
+    r = httpx.get(
+        f"{YADISK_API}/upload",
+        headers=_yadisk_headers(),
+        params={"path": remote_path, "overwrite": "true"},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        return None
+    return r.json().get("href")
+
+
+def _yadisk_rename(from_path: str, to_path: str) -> bool:
+    r = httpx.post(
+        f"{YADISK_API}/move",
+        headers=_yadisk_headers(),
+        params={"from": from_path, "path": to_path, "overwrite": "true"},
+        timeout=30,
+    )
+    return r.status_code in (201, 202)
+
+
+def _yadisk_upload_bytes(content: bytes, remote_path: str) -> tuple[bool, str]:
+    """Upload bytes to Yandex Disk using fake .txt extension trick to bypass throttling."""
+    suffix = Path(remote_path).suffix
+    fake_remote = remote_path[: -len(suffix)] + ".txt" if suffix else remote_path + ".txt"
+    upload_url = _yadisk_get_upload_url(fake_remote)
+    if not upload_url:
+        return False, "Failed to get upload URL"
+
+    with httpx.Client(timeout=httpx.Timeout(3600.0, connect=60.0, read=3600.0, write=3600.0, pool=60.0)) as c:
+        r = c.put(upload_url, content=content)
+
+    if r.status_code not in (201, 202):
+        return False, f"Upload failed: {r.status_code}"
+
+    ok = _yadisk_rename(fake_remote, remote_path)
+    if not ok:
+        return False, "Rename failed"
+    return True, "OK"
+
+
+def _make_zip(mp4_files: list[Path]) -> bytes:
+    """Pack mp4 files into a zip archive in memory."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for f in mp4_files:
+            zf.write(f, f.name)
+    return buf.getvalue()
+
+
+def _yadisk_list_dirs(path: str) -> list[str]:
+    """List subdirectories at given Yandex Disk path."""
+    r = httpx.get(
+        YADISK_API,
+        headers=_yadisk_headers(),
+        params={"path": path, "fields": "_embedded.items.name,_embedded.items.type", "limit": 100},
+        timeout=15,
+    )
+    if r.status_code != 200:
+        return []
+    items = r.json().get("_embedded", {}).get("items", [])
+    return sorted(i["name"] for i in items if i.get("type") == "dir")
+
+
+def _list_output_dirs() -> list[str]:
+    """Recursively list leaf directories that contain .mp4 files."""
+    if not OUTPUT_DIR.exists():
+        return []
+    dirs = []
+    for p in sorted(OUTPUT_DIR.rglob("*.mp4")):
+        rel = str(p.parent.relative_to(OUTPUT_DIR))
+        if rel not in dirs:
+            dirs.append(rel)
+    return dirs
+
 
 def _to_data_uri(file_bytes: bytes, mime: str) -> str:
     b64 = base64.b64encode(file_bytes).decode()
@@ -23,7 +118,8 @@ def _to_data_uri(file_bytes: bytes, mime: str) -> str:
 
 def _submit(prompt: str, image_bytes: bytes | None, image_mime: str | None,
             ratio: str, resolution: str, duration: int | None,
-            generate_audio: bool, seed: int | None = None) -> dict:
+            generate_audio: bool, seed: int | None = None,
+            upscale_resolution: str | None = None) -> dict:
     content: list[dict] = []
 
     if image_bytes:
@@ -45,6 +141,8 @@ def _submit(prompt: str, image_bytes: bytes | None, image_mime: str | None,
         payload["duration"] = duration
     if seed is not None:
         payload["seed"] = seed
+    if upscale_resolution:
+        payload["upscale_resolution"] = upscale_resolution
 
     resp = httpx.post(f"{API_BASE}/generations/tasks", json=payload, timeout=30)
     resp.raise_for_status()
@@ -68,10 +166,17 @@ def _list_tasks() -> list[dict]:
 st.set_page_config(page_title="HistoryDoc SeeDance", layout="wide")
 st.title("HistoryDoc SeeDance")
 
-tab_generate, tab_batch, tab_history = st.tabs(["Generate", "Batch", "History"])
+tab_generate, tab_batch, tab_history, tab_yadisk = st.tabs(["Generate", "Batch", "History", "Yandex Disk"])
 
 # ── Generate tab ──────────────────────────────────────────────────────────────
 with tab_generate:
+    upscale = st.checkbox("Upscale (Topaz)", value=False, key="g_upscale")
+    upscale_res = st.selectbox(
+        "Upscale resolution",
+        ["1080p", "4k"],
+        key="g_upscale_res",
+    )
+
     with st.form("generate_form"):
         prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...")
 
@@ -129,6 +234,7 @@ with tab_generate:
                         duration=dur,
                         generate_audio=generate_audio,
                         seed=seed,
+                        upscale_resolution=upscale_res if upscale else None,
                     )
                 except Exception as e:
                     st.error(f"Failed to submit: {e}")
@@ -178,6 +284,13 @@ with tab_generate:
 with tab_batch:
     st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
 
+    b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
+    b_upscale_res = st.selectbox(
+        "Upscale resolution",
+        ["1080p", "4k"],
+        key="b_upscale_res",
+    )
+
     with st.form("batch_form"):
         xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"])
 
@@ -195,6 +308,7 @@ with tab_batch:
                 key="b_duration",
             )
         b_audio = st.checkbox("Generate audio", value=True, key="b_audio")
+
         batch_submitted = st.form_submit_button("Start batch", type="primary")
 
     if batch_submitted:
@@ -203,15 +317,19 @@ with tab_batch:
         else:
             with st.spinner("Submitting batch..."):
                 try:
+                    batch_data: dict = {
+                        "ratio": b_ratio,
+                        "resolution": b_resolution,
+                        "duration": str(b_duration),
+                        "generate_audio": str(b_audio).lower(),
+                    }
+                    if b_upscale:
+                        batch_data["upscale_resolution"] = b_upscale_res
+
                     resp = httpx.post(
                         f"{API_BASE}/generations/batch",
                         files={"file": (xlsx_file.name, xlsx_file.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-                        data={
-                            "ratio": b_ratio,
-                            "resolution": b_resolution,
-                            "duration": str(b_duration),
-                            "generate_audio": str(b_audio).lower(),
-                        },
+                        data=batch_data,
                         timeout=60,
                     )
                     resp.raise_for_status()
@@ -312,3 +430,97 @@ with tab_history:
                         st.video(t["video_url"])
                     elif status == "succeeded":
                         st.warning("Video URL expired or unavailable.")
+
+
+# ── Yandex Disk tab ───────────────────────────────────────────────────────────
+with tab_yadisk:
+    st.markdown("Загрузите директорию с видео на Яндекс Диск.")
+
+    if not YADISK_TOKEN:
+        st.error("YANDEX_DISK_TOKEN не задан в .env")
+    else:
+        output_dirs = _list_output_dirs()
+        if not output_dirs:
+            st.info("Нет директорий с .mp4 файлами в output/")
+        else:
+            selected_dir = st.selectbox(
+                "Директория в output/",
+                output_dirs,
+                help="Выберите директорию, файлы из которой загрузить на Яндекс Диск",
+            )
+
+            # Yandex Disk folder browser
+            if "yd_path" not in st.session_state:
+                st.session_state["yd_path"] = "disk:/"
+
+            current_yd_path = st.session_state["yd_path"]
+            st.caption(f"Текущая папка: `{current_yd_path}`")
+
+            col_nav1, col_nav2 = st.columns([1, 4])
+            with col_nav1:
+                if st.button("⬆ Вверх", disabled=current_yd_path == "disk:/"):
+                    parent = current_yd_path.rsplit("/", 1)[0]
+                    st.session_state["yd_path"] = parent if parent != "disk:" else "disk:/"
+                    st.rerun()
+
+            subdirs = _yadisk_list_dirs(current_yd_path)
+            if subdirs:
+                chosen_subdir = st.selectbox("Папки на Яндекс Диске", ["— выбрать —"] + subdirs)
+                col_open, col_select = st.columns(2)
+                with col_open:
+                    if st.button("Открыть", disabled=chosen_subdir == "— выбрать —"):
+                        st.session_state["yd_path"] = f"{current_yd_path.rstrip('/')}/{chosen_subdir}"
+                        st.rerun()
+                with col_select:
+                    if st.button("Выбрать эту папку", disabled=chosen_subdir == "— выбрать —"):
+                        st.session_state["yd_dest"] = f"{current_yd_path.rstrip('/')}/{chosen_subdir}"
+            else:
+                st.info("Подпапок нет")
+
+            new_folder = st.text_input("Или введите/создайте новую папку", placeholder="название папки")
+            if st.button("Создать и выбрать", disabled=not new_folder.strip()):
+                new_path = f"{current_yd_path.rstrip('/')}/{new_folder.strip()}"
+                _yadisk_create_folder(new_path)
+                st.session_state["yd_dest"] = new_path
+
+            yadisk_dest = st.session_state.get("yd_dest", current_yd_path)
+            st.success(f"Загрузить в: `{yadisk_dest}`")
+
+            local_dir = OUTPUT_DIR / selected_dir
+            mp4_files = sorted(local_dir.glob("*.mp4")) if local_dir.exists() else []
+            st.caption(f"Файлов для загрузки: {len(mp4_files)}")
+
+            if mp4_files:
+                with st.expander("Список файлов"):
+                    for f in mp4_files:
+                        size_mb = f.stat().st_size / 1024 / 1024
+                        st.text(f"{f.name}  ({size_mb:.1f} MB)")
+
+            # folder name = last component of selected_dir (e.g. "SeeDance_rome_720p_to_4k")
+            dir_label = Path(selected_dir).name or selected_dir.replace("/", "_")
+            zip_name = dir_label + ".zip"
+            remote_folder = f"{yadisk_dest}/{dir_label}"
+            remote_zip = f"{remote_folder}/{zip_name}"
+            st.caption(f"Путь на диске: `{remote_zip}`")
+
+            if st.button("Загрузить на Яндекс Диск", type="primary", disabled=not mp4_files):
+                status_text = st.empty()
+                progress_bar = st.progress(0)
+
+                status_text.info(f"Упаковываю {len(mp4_files)} файлов в архив...")
+                zip_bytes = _make_zip(mp4_files)
+                zip_mb = len(zip_bytes) / 1024 / 1024
+                progress_bar.progress(0.1)
+
+                status_text.info(f"Создаю папку {remote_folder}...")
+                _yadisk_create_folder(remote_folder)
+                progress_bar.progress(0.15)
+
+                status_text.info(f"Загружаю {zip_name} ({zip_mb:.1f} MB)...")
+                ok, msg = _yadisk_upload_bytes(zip_bytes, remote_zip)
+                progress_bar.progress(1.0)
+
+                if ok:
+                    status_text.success(f"Загружено: {remote_zip} ({zip_mb:.1f} MB)")
+                else:
+                    status_text.error(f"Ошибка: {msg}")

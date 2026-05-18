@@ -38,6 +38,8 @@ class GenerationRequest(BaseModel):
     duration: int | None = Field(default=None, ge=-1, le=15)
     seed: int | None = Field(default=None, ge=-1, le=4294967295)
     watermark: bool = Field(default=False)
+    # None = no upscale; "1080p" or "4k" = run Topaz Proteus after generation
+    upscale_resolution: str | None = Field(default=None)
     callback_url: str | None = Field(default=None)
     return_last_frame: bool = Field(default=False)
     execution_expires_after: int | None = Field(default=None, ge=3600, le=259200)
@@ -133,3 +135,6 @@ class TaskDB(BaseModel):
     local_path: str | None = None
     batch_id: str | None = None
     batch_order: int | None = None
+
+    # upscale
+    upscale_resolution: str | None = None

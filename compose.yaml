@@ -8,6 +8,9 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./output:/app/output
 
   api:
     build:

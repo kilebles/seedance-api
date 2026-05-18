@@ -56,6 +56,7 @@ async def create(
         submitted_at=submitted_at,
         batch_id=batch_id,
         batch_order=batch_order,
+        upscale_resolution=request.upscale_resolution,
     )
     db.add(task)
     await db.commit()

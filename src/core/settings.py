@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     admin_username: str
     admin_password: str
 
+    # Topaz Labs
+    topaz_api_key: str = ""
+
     # Background worker
     worker_poll_interval: int = 10  # seconds
     seedance_max_concurrent: int = 10  # max tasks running in BytePlus at once

@@ -59,3 +59,7 @@ class GenerationTask(Base):
     local_path: Mapped[str | None] = mapped_column(String, nullable=True)
     batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     batch_order: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    # --- upscale ---
+    # None = no upscale, "1080p" | "4k" = upscale after generation completes
+    upscale_resolution: Mapped[str | None] = mapped_column(String(8), nullable=True)

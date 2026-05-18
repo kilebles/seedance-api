@@ -38,14 +38,19 @@ async def create_batch(
     resolution: Resolution = Form(default=Resolution.p720),
     duration: int = Form(default=8, ge=4, le=15),
     generate_audio: bool = Form(default=True),
+    upscale_resolution: str | None = Form(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[TaskDB]:
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
 
     stem = Path(file.filename).stem
-    output_dir = f"output/batch/{stem}"
-    logger.info("Batch upload | file={f}", f=file.filename)
+    if upscale_resolution:
+        dir_name = f"SeeDance_{stem}_{resolution.value}_to_{upscale_resolution}"
+    else:
+        dir_name = f"SeeDance_{stem}_{resolution.value}"
+    output_dir = f"output/batch/{dir_name}"
+    logger.info("Batch upload | file={f} dir={d}", f=file.filename, d=dir_name)
 
     content = await file.read()
     try:
@@ -94,6 +99,7 @@ async def create_batch(
             resolution=resolution,
             duration=duration,
             generate_audio=generate_audio,
+            upscale_resolution=upscale_resolution,
         )
 
         task = await generation_repo.create(
