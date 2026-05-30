@@ -161,6 +161,17 @@ def _list_tasks() -> list[dict]:
     return resp.json()
 
 
+def _cancel_task(task_id: str) -> None:
+    resp = httpx.delete(f"{API_BASE}/generations/tasks/{task_id}", timeout=10)
+    resp.raise_for_status()
+
+
+def _cancel_tasks_bulk(task_ids: list[str]) -> dict:
+    resp = httpx.post(f"{API_BASE}/generations/tasks/cancel-bulk", json={"task_ids": task_ids}, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="HistoryDoc SeeDance", layout="wide")
@@ -399,8 +410,18 @@ with tab_batch:
 
 # ── History tab ───────────────────────────────────────────────────────────────
 with tab_history:
-    if st.button("Refresh"):
-        st.rerun()
+    col_refresh, col_sort, col_cancel_all = st.columns([1, 2, 2])
+    with col_refresh:
+        if st.button("Refresh", key="history_refresh"):
+            st.rerun()
+    with col_sort:
+        sort_order = st.radio(
+            "Sort by date",
+            ["Newer first", "Older first"],
+            horizontal=True,
+            key="history_sort",
+            label_visibility="collapsed",
+        )
 
     try:
         tasks = _list_tasks()
@@ -408,28 +429,100 @@ with tab_history:
         st.error(f"Failed to load tasks: {e}")
         tasks = []
 
+    # Sort
+    if sort_order == "Older first":
+        tasks = list(reversed(tasks))
+
+    # Cancellable statuses
+    CANCELLABLE = {"queued", "paused"}
+
+    cancellable_tasks = [t for t in tasks if t.get("status") in CANCELLABLE]
+
+    with col_cancel_all:
+        if cancellable_tasks:
+            if st.button(f"Cancel all queued/paused ({len(cancellable_tasks)})", type="primary", key="cancel_all"):
+                ids = [t["id"] for t in cancellable_tasks]
+                try:
+                    result = _cancel_tasks_bulk(ids)
+                    st.success(f"Cancelled {result['cancelled']}, skipped {result['skipped']}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Cancel failed: {e}")
+
     if not tasks:
         st.info("No tasks yet.")
     else:
-        for t in reversed(tasks):
-            status = t.get("status", "?")
-            color = {"succeeded": "green", "failed": "red", "running": "orange", "queued": "gray", "expired": "red"}.get(status, "gray")
-            with st.expander(f":{color}[{status.upper()}] `{t['id'][:8]}...` — {t.get('created_at', '')[:19]}"):
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    items = t.get("content_items") or []
-                    for item in items:
-                        if item.get("type") == "text":
-                            st.markdown(f"**Prompt:** {item['text']}")
-                    st.markdown(f"**Model:** {t.get('model')}")
-                    st.markdown(f"**Resolution:** {t.get('resolution_requested')} | **Ratio:** {t.get('ratio_requested')}")
-                    if t.get("error_message"):
-                        st.error(t["error_message"])
-                with col_b:
-                    if t.get("video_url"):
-                        st.video(t["video_url"])
-                    elif status == "succeeded":
-                        st.warning("Video URL expired or unavailable.")
+        # Bulk selection state
+        if "selected_task_ids" not in st.session_state:
+            st.session_state["selected_task_ids"] = set()
+
+        # Bulk cancel controls for selected
+        selected = st.session_state["selected_task_ids"]
+        if selected:
+            sel_col1, sel_col2, sel_col3 = st.columns([2, 2, 4])
+            with sel_col1:
+                st.caption(f"Selected: {len(selected)}")
+            with sel_col2:
+                if st.button("Cancel selected", type="primary", key="cancel_selected"):
+                    try:
+                        result = _cancel_tasks_bulk(list(selected))
+                        st.success(f"Cancelled {result['cancelled']}, skipped {result['skipped']}")
+                        st.session_state["selected_task_ids"] = set()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Cancel failed: {e}")
+            with sel_col3:
+                if st.button("Clear selection", key="clear_selection"):
+                    st.session_state["selected_task_ids"] = set()
+                    st.rerun()
+
+        STATUS_COLOR = {"succeeded": "green", "failed": "red", "running": "orange", "queued": "gray", "paused": "blue", "expired": "red", "cancelled": "gray"}
+
+        for t in tasks:
+            task_id = t["id"]
+            task_status = t.get("status", "?")
+            color = STATUS_COLOR.get(task_status, "gray")
+            is_cancellable = task_status in CANCELLABLE
+            is_selected = task_id in st.session_state["selected_task_ids"]
+
+            header_col, checkbox_col = st.columns([10, 1])
+            with header_col:
+                with st.expander(f":{color}[{task_status.upper()}] `{task_id[:8]}...` — {t.get('created_at', '')[:19]}"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        items = t.get("content_items") or []
+                        for item in items:
+                            if item.get("type") == "text":
+                                st.markdown(f"**Prompt:** {item['text']}")
+                        st.markdown(f"**Model:** {t.get('model')}")
+                        st.markdown(f"**Resolution:** {t.get('resolution_requested')} | **Ratio:** {t.get('ratio_requested')}")
+                        if t.get("error_message"):
+                            st.error(t["error_message"])
+                        if is_cancellable:
+                            if st.button("Cancel this task", key=f"cancel_{task_id}"):
+                                try:
+                                    _cancel_task(task_id)
+                                    st.session_state["selected_task_ids"].discard(task_id)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Cancel failed: {e}")
+                    with col_b:
+                        if t.get("video_url"):
+                            st.video(t["video_url"])
+                        elif task_status == "succeeded":
+                            st.warning("Video URL expired or unavailable.")
+            with checkbox_col:
+                if is_cancellable:
+                    checked = st.checkbox(
+                        "select",
+                        value=is_selected,
+                        key=f"chk_{task_id}",
+                        label_visibility="collapsed",
+                    )
+                    if checked and task_id not in st.session_state["selected_task_ids"]:
+                        st.session_state["selected_task_ids"].add(task_id)
+                    elif not checked and task_id in st.session_state["selected_task_ids"]:
+                        st.session_state["selected_task_ids"].discard(task_id)
 
 
 # ── Yandex Disk tab ───────────────────────────────────────────────────────────

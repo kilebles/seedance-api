@@ -98,3 +98,55 @@ async def list_tasks(db: AsyncSession = Depends(get_db)) -> list[TaskDB]:
     result = await db.execute(select(GenerationTask).order_by(GenerationTask.created_at.desc()))
     tasks = result.scalars().all()
     return [TaskDB.model_validate(t) for t in tasks]
+
+
+@router.delete(
+    "/tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Cancel a queued or paused task",
+)
+async def cancel_task(
+    task_id: uuid.UUID = Path(..., description="Task UUID"),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    task = await generation_repo.get(db, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    if task.status not in ("queued", "paused"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot cancel task with status '{task.status}'. Only queued/paused tasks can be cancelled.",
+        )
+    await generation_repo.update(db, task_id, status="cancelled")
+    logger.info("Task cancelled | id={id}", id=task_id)
+
+
+@router.post(
+    "/tasks/cancel-bulk",
+    summary="Cancel multiple queued or paused tasks",
+)
+async def cancel_tasks_bulk(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    task_ids: list[str] = body.get("task_ids", [])
+    if not task_ids:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="task_ids is required")
+
+    cancelled = 0
+    skipped = 0
+    for tid_str in task_ids:
+        try:
+            tid = uuid.UUID(tid_str)
+        except ValueError:
+            skipped += 1
+            continue
+        task = await generation_repo.get(db, tid)
+        if task is None or task.status not in ("queued", "paused"):
+            skipped += 1
+            continue
+        await generation_repo.update(db, tid, status="cancelled")
+        cancelled += 1
+
+    logger.info("Bulk cancel | cancelled={c} skipped={s}", c=cancelled, s=skipped)
+    return {"cancelled": cancelled, "skipped": skipped}
