@@ -116,7 +116,9 @@ def _to_data_uri(file_bytes: bytes, mime: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def _submit(prompt: str, image_bytes: bytes | None, image_mime: str | None,
+def _submit(prompt: str,
+            image_bytes: bytes | None, image_mime: str | None,
+            last_frame_bytes: bytes | None, last_frame_mime: str | None,
             ratio: str, resolution: str, duration: int | None,
             generate_audio: bool, seed: int | None = None,
             upscale_resolution: str | None = None) -> dict:
@@ -127,6 +129,13 @@ def _submit(prompt: str, image_bytes: bytes | None, image_mime: str | None,
             "type": "image_url",
             "image_url": {"url": _to_data_uri(image_bytes, image_mime)},
             "role": "first_frame",
+        })
+
+    if last_frame_bytes:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": _to_data_uri(last_frame_bytes, last_frame_mime)},
+            "role": "last_frame",
         })
 
     content.append({"type": "text", "text": prompt})
@@ -191,10 +200,17 @@ with tab_generate:
     with st.form("generate_form"):
         prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...")
 
-        uploaded = st.file_uploader(
-            "Первый кадр (необязательно)",
-            type=["jpg", "jpeg", "png", "webp"],
-        )
+        col_img1, col_img2 = st.columns(2)
+        with col_img1:
+            uploaded = st.file_uploader(
+                "Первый кадр (необязательно)",
+                type=["jpg", "jpeg", "png", "webp"],
+            )
+        with col_img2:
+            uploaded_last = st.file_uploader(
+                "Последний кадр (необязательно)",
+                type=["jpg", "jpeg", "png", "webp"],
+            )
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -225,12 +241,18 @@ with tab_generate:
 
         submitted = st.form_submit_button("Generate", type="primary")
 
+    # Session history for this tab
+    if "generate_tasks" not in st.session_state:
+        st.session_state["generate_tasks"] = []
+
     if submitted:
         if not prompt.strip():
             st.error("Prompt is required.")
         else:
             image_bytes = uploaded.read() if uploaded else None
             image_mime = uploaded.type if uploaded else None
+            last_frame_bytes = uploaded_last.read() if uploaded_last else None
+            last_frame_mime = uploaded_last.type if uploaded_last else None
             dur = int(duration)
             seed = int(seed_value) if fixed_seed else None
 
@@ -240,6 +262,8 @@ with tab_generate:
                         prompt=prompt.strip(),
                         image_bytes=image_bytes,
                         image_mime=image_mime,
+                        last_frame_bytes=last_frame_bytes,
+                        last_frame_mime=last_frame_mime,
                         ratio=ratio,
                         resolution=resolution,
                         duration=dur,
@@ -252,11 +276,17 @@ with tab_generate:
                     st.stop()
 
             task_id = task["id"]
-            st.success(f"Task created: `{task_id}`")
+            # Track in session
+            st.session_state["generate_tasks"].insert(0, {
+                "id": task_id,
+                "prompt": prompt.strip(),
+                "resolution": resolution,
+                "ratio": ratio,
+                "upscale_resolution": upscale_res if upscale else None,
+            })
 
             status_box = st.empty()
             progress_bar = st.progress(0)
-
             statuses = {"queued": 10, "running": 50, "succeeded": 100, "failed": 100, "expired": 100}
 
             while True:
@@ -266,30 +296,71 @@ with tab_generate:
                     status_box.error(f"Polling error: {e}")
                     break
 
-                status = task.get("status", "queued")
-                progress_bar.progress(statuses.get(status, 10))
-                status_box.info(f"Status: **{status}**")
+                cur_status = task.get("status", "queued")
+                progress_bar.progress(statuses.get(cur_status, 10))
+                status_box.info(f"Status: **{cur_status}**")
 
-                if status == "succeeded":
-                    video_url = task.get("video_url")
-                    if video_url:
-                        st.video(video_url)
-                    last_frame = task.get("last_frame_url")
-                    if last_frame:
-                        st.image(last_frame, caption="Last frame")
-                    st.json({
-                        "duration": task.get("duration_actual"),
-                        "resolution": task.get("resolution_actual"),
-                        "ratio": task.get("ratio_actual"),
-                        "seed": task.get("seed_actual"),
-                        "tokens": task.get("total_tokens"),
-                    })
+                if cur_status == "succeeded":
+                    status_box.empty()
+                    progress_bar.empty()
+                    st.rerun()
                     break
-                elif status in ("failed", "expired"):
-                    st.error(f"Task {status}: {task.get('error_message') or task.get('error_code') or 'unknown error'}")
+                elif cur_status in ("failed", "expired"):
+                    st.error(f"Task {cur_status}: {task.get('error_message') or task.get('error_code') or 'unknown error'}")
                     break
 
                 time.sleep(POLL_INTERVAL)
+
+    # ── Generated results grid ────────────────────────────────────────────────
+    gen_tasks = st.session_state.get("generate_tasks", [])
+    if gen_tasks:
+        st.divider()
+        st.caption(f"Сгенерировано в этой сессии: {len(gen_tasks)}")
+        cols = st.columns(3)
+        for i, entry in enumerate(gen_tasks):
+            tid = entry["id"]
+            try:
+                t = _get_task(tid)
+            except Exception:
+                t = {"id": tid, "status": "?"}
+            cur_status = t.get("status", "?")
+            video_url = t.get("video_url")
+            last_frame = t.get("last_frame_url")
+            prompt_text = entry.get("prompt", "")
+            res = t.get("resolution_actual") or entry.get("resolution", "")
+            ratio_val = t.get("ratio_actual") or entry.get("ratio", "")
+            upscale_val = entry.get("upscale_resolution")
+            duration_val = t.get("duration_actual")
+
+            with cols[i % 3]:
+                if cur_status == "succeeded":
+                    if video_url:
+                        if last_frame:
+                            # Show thumbnail; video loads on expand
+                            with st.expander("▶ Смотреть видео", expanded=False):
+                                st.video(video_url)
+                            st.image(last_frame, use_container_width=True)
+                        else:
+                            st.video(video_url)
+                    elif last_frame:
+                        st.image(last_frame, use_container_width=True)
+                    else:
+                        st.info("URL истёк")
+                elif cur_status in ("queued", "running"):
+                    st.markdown(f"⚙️ **{cur_status}**")
+                elif cur_status == "failed":
+                    st.error(f"failed: {t.get('error_message') or t.get('error_code') or ''}")
+                else:
+                    st.caption(cur_status)
+
+                # Meta
+                prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
+                meta = f"`{res} {ratio_val}`"
+                if duration_val:
+                    meta += f" `{duration_val}s`"
+                if upscale_val:
+                    meta += f" `→{upscale_val}`"
+                st.caption(f"{meta}  \n{prompt_short}")
 
 # ── Batch tab ─────────────────────────────────────────────────────────────────
 with tab_batch:

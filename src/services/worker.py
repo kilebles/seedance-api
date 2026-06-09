@@ -310,6 +310,14 @@ async def _poll_enhance() -> None:
                 download_url=result.download_url,
                 expires_in_ms=result.expires_in_ms,
             )
+            # Write upscaled URL back to the parent generation task
+            if result.download_url and task.generation_task_id:
+                async with AsyncSessionLocal() as db:
+                    await generation_repo.update(db, task.generation_task_id, video_url=result.download_url)
+                logger.info(
+                    "Worker: enhance url written to generation {id}",
+                    id=task.generation_task_id,
+                )
             # Download upscaled video — overwrite local_path (replaces original)
             if result.download_url and task.local_path:
                 await _download_video(result.download_url, task.local_path)
