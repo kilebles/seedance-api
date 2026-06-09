@@ -3,10 +3,10 @@ services:
     build:
       context: frontend-next
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: "http://89.127.192.164:8000"
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_BASE: "http://89.127.192.164:8000"
     depends_on:
       - api
     restart: unless-stopped
