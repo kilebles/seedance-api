@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Task, GenerationRequest, submitTask } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { Task, GenerationRequest, submitTask, listTasks } from "@/lib/api";
 import GenerateInput from "@/components/GenerateInput";
 import TaskCard from "@/components/TaskCard";
 import { useLocalStorage } from "@/lib/useLocalStorage";
@@ -10,6 +10,10 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listTasks().then(setTasks).catch(() => {});
+  }, []);
 
   const [ratio, setRatio] = useLocalStorage("sd_ratio", "16:9");
   const [resolution, setResolution] = useLocalStorage("sd_resolution", "720p");

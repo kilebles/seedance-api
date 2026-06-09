@@ -68,6 +68,12 @@ export async function getTask(id: string): Promise<Task> {
   return res.json();
 }
 
+export async function listTasks(): Promise<Task[]> {
+  const res = await fetch(`${API_BASE}/generations/tasks`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export function toDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
