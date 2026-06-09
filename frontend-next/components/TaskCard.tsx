@@ -14,9 +14,82 @@ function getPrompt(items: ContentItem[]): string {
   return items.find((i) => i.type === "text")?.text ?? "";
 }
 
+function VideoThumbnail({ src }: { src: string }) {
+  const [thumbnail, setThumbnail] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.preload = "metadata";
+    video.src = src;
+
+    const capture = () => {
+      video.currentTime = 0.01;
+    };
+
+    const draw = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth || 320;
+        canvas.height = video.videoHeight || 180;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          setThumbnail(canvas.toDataURL("image/jpeg", 0.8));
+        }
+      } catch {
+        // CORS blocked — leave thumbnail null, show grey
+      }
+      video.src = "";
+    };
+
+    video.addEventListener("loadedmetadata", capture);
+    video.addEventListener("seeked", draw);
+    video.load();
+
+    return () => {
+      video.removeEventListener("loadedmetadata", capture);
+      video.removeEventListener("seeked", draw);
+      video.src = "";
+    };
+  }, [src]);
+
+  if (playing) {
+    return (
+      <video
+        ref={videoRef}
+        src={src}
+        controls
+        autoPlay
+        className="w-full h-full object-cover"
+      />
+    );
+  }
+
+  return (
+    <button onClick={() => setPlaying(true)} className="absolute inset-0 w-full h-full group">
+      {thumbnail ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full bg-zinc-800" />
+      )}
+      <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5 ml-0.5">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function TaskCard({ task: initial, onUpdate }: Props) {
   const [task, setTask] = useState(initial);
-  const [playing, setPlaying] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -37,7 +110,6 @@ export default function TaskCard({ task: initial, onUpdate }: Props) {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [task]);
 
-  // BytePlus URLs expire after 24h; use updated_at as the reference point
   const videoAlive = task.video_url && task.updated_at
     ? Date.now() - new Date(task.updated_at).getTime() < 23.5 * 60 * 60 * 1000
     : false;
@@ -56,48 +128,15 @@ export default function TaskCard({ task: initial, onUpdate }: Props) {
 
   return (
     <div className="rounded-xl overflow-hidden bg-white/5 border border-white/8 flex flex-col">
-      {/* Thumbnail / video area */}
       <div className="relative aspect-video bg-zinc-900 flex items-center justify-center">
         {task.status === "succeeded" && videoAlive ? (
-          playing ? (
-            <video
-              src={task.video_url!}
-              controls
-              autoPlay
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <button
-              onClick={() => setPlaying(true)}
-              className="absolute inset-0 w-full h-full group"
-            >
-              {task.last_frame_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={task.last_frame_url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-zinc-800" />
-              )}
-              {/* Play overlay */}
-              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
-                  <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5 ml-0.5">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-              </div>
-            </button>
-          )
+          <VideoThumbnail src={task.video_url!} />
         ) : task.status === "failed" ? (
           <div className="text-center px-4">
             <p className="text-red-400 text-xs font-medium">Failed</p>
             <p className="text-white/40 text-[11px] mt-1">{task.error_message ?? task.error_code ?? ""}</p>
           </div>
         ) : (
-          /* queued / running — skeleton */
           <div className="absolute inset-0 overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 animate-shimmer bg-[length:200%_100%]" />
             <div className="absolute bottom-3 left-3 flex items-center gap-2">
@@ -108,7 +147,6 @@ export default function TaskCard({ task: initial, onUpdate }: Props) {
         )}
       </div>
 
-      {/* Meta */}
       <div className="px-3 py-2">
         <p className="text-white/80 text-xs leading-relaxed line-clamp-2">{promptShort}</p>
         <p className="text-white/30 text-[11px] mt-1">{meta}</p>
