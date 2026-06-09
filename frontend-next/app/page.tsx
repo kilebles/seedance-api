@@ -11,34 +11,39 @@ function getPrompt(items: ContentItem[]): string {
   return items.find((i) => i.type === "text")?.text ?? "";
 }
 
+function isExpired(t: Task): boolean {
+  if (t.status !== "succeeded") return false;
+  if (!t.video_url || !t.updated_at) return true;
+  return Date.now() - new Date(t.updated_at).getTime() >= 23.5 * 60 * 60 * 1000;
+}
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useLocalStorage<"newest" | "oldest">("sd_sort", "newest");
+  const [showFailed, setShowFailed] = useLocalStorage("sd_show_failed", false);
+  const [showExpired, setShowExpired] = useLocalStorage("sd_show_expired", false);
 
   useEffect(() => {
     listTasks().then(setTasks).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
-    const now = Date.now();
-    const isAliveOrPending = (t: Task) => {
-      if (t.status !== "succeeded") return true; // queued/running/failed — always show
-      if (!t.video_url || !t.updated_at) return false;
-      return now - new Date(t.updated_at).getTime() < 23.5 * 60 * 60 * 1000;
-    };
-
     const q = search.trim().toLowerCase();
-    let list = tasks.filter(isAliveOrPending);
+    let list = tasks.filter((t) => {
+      if (t.status === "failed" && !showFailed) return false;
+      if (isExpired(t) && !showExpired) return false;
+      return true;
+    });
     if (q) list = list.filter((t) => getPrompt(t.content_items).toLowerCase().includes(q));
     list = [...list].sort((a, b) => {
       const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       return sort === "newest" ? -diff : diff;
     });
     return list;
-  }, [tasks, search, sort]);
+  }, [tasks, search, sort, showFailed, showExpired]);
 
   const [ratio, setRatio] = useLocalStorage("sd_ratio", "16:9");
   const [resolution, setResolution] = useLocalStorage("sd_resolution", "720p");
@@ -79,6 +84,24 @@ export default function Home() {
               className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none"
             />
           </div>
+
+          {/* Checkboxes */}
+          {(["failed", "expired"] as const).map((key) => {
+            const checked = key === "failed" ? showFailed : showExpired;
+            const toggle = key === "failed" ? setShowFailed : setShowExpired;
+            return (
+              <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => toggle(e.target.checked)}
+                  className="accent-white w-3.5 h-3.5"
+                />
+                <span className="text-xs text-white/40">{key === "failed" ? "Failed" : "Expired"}</span>
+              </label>
+            );
+          })}
+
           {/* Sort */}
           <div className="flex gap-1 bg-white/5 rounded-xl p-1">
             {(["newest", "oldest"] as const).map((s) => (
