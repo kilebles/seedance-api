@@ -146,7 +146,7 @@ export default function GenerateInput({
   const showMediaRow = hasRefMedia || hasFixedMedia;
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className="w-full">
       <div className="bg-white/5 rounded-2xl px-3 pt-3 pb-2.5 flex flex-col gap-2">
 
         {/* Media row — inside the box */}

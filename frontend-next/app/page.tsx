@@ -56,16 +56,18 @@ export default function Home() {
       {/* Bottom input */}
       <div className="shrink-0 px-6 pb-6 pt-3">
         {error && <p className="text-red-400 text-sm mb-2 text-center">{error}</p>}
-        <GenerateInput
-          onSubmit={handleSubmit}
-          loading={loading}
-          ratio={ratio} setRatio={setRatio}
-          resolution={resolution} setResolution={setResolution}
-          duration={duration} setDuration={setDuration}
-          generateAudio={generateAudio} setGenerateAudio={setGenerateAudio}
-          seed={seed} setSeed={setSeed}
-          upscaleResolution={upscaleResolution} setUpscaleResolution={setUpscaleResolution}
-        />
+        <div className="max-w-5xl mx-auto">
+          <GenerateInput
+            onSubmit={handleSubmit}
+            loading={loading}
+            ratio={ratio} setRatio={setRatio}
+            resolution={resolution} setResolution={setResolution}
+            duration={duration} setDuration={setDuration}
+            generateAudio={generateAudio} setGenerateAudio={setGenerateAudio}
+            seed={seed} setSeed={setSeed}
+            upscaleResolution={upscaleResolution} setUpscaleResolution={setUpscaleResolution}
+          />
+        </div>
       </div>
     </div>
   );
