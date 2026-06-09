@@ -41,7 +41,7 @@ class GenerationRequest(BaseModel):
     # None = no upscale; "1080p" or "4k" = run Topaz Proteus after generation
     upscale_resolution: str | None = Field(default=None)
     callback_url: str | None = Field(default=None)
-    return_last_frame: bool = Field(default=False)
+    return_last_frame: bool = Field(default=True)
     execution_expires_after: int | None = Field(default=None, ge=3600, le=259200)
     safety_identifier: str | None = Field(default=None, max_length=64)
 
