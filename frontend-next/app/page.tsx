@@ -23,10 +23,16 @@ export default function Home() {
   }, []);
 
   const filtered = useMemo(() => {
+    const now = Date.now();
+    const isAliveOrPending = (t: Task) => {
+      if (t.status !== "succeeded") return true; // queued/running/failed — always show
+      if (!t.video_url || !t.updated_at) return false;
+      return now - new Date(t.updated_at).getTime() < 23.5 * 60 * 60 * 1000;
+    };
+
     const q = search.trim().toLowerCase();
-    let list = q
-      ? tasks.filter((t) => getPrompt(t.content_items).toLowerCase().includes(q))
-      : tasks;
+    let list = tasks.filter(isAliveOrPending);
+    if (q) list = list.filter((t) => getPrompt(t.content_items).toLowerCase().includes(q));
     list = [...list].sort((a, b) => {
       const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       return sort === "newest" ? -diff : diff;
@@ -59,7 +65,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
+    <div className="h-screen overflow-hidden bg-zinc-950 text-white flex flex-col">
       {/* Toolbar */}
       <div className="shrink-0 px-6 pt-5 pb-3">
         <div className="max-w-5xl mx-auto flex items-center gap-3">

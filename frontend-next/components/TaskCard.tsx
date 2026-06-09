@@ -16,6 +16,7 @@ function getPrompt(items: ContentItem[]): string {
 
 export default function TaskCard({ task: initial, onUpdate }: Props) {
   const [task, setTask] = useState(initial);
+  const [playing, setPlaying] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -56,18 +57,39 @@ export default function TaskCard({ task: initial, onUpdate }: Props) {
   return (
     <div className="rounded-xl overflow-hidden bg-white/5 border border-white/8 flex flex-col">
       {/* Thumbnail / video area */}
-      <div className="relative aspect-video bg-black flex items-center justify-center">
-        {task.status === "succeeded" ? (
-          videoAlive ? (
+      <div className="relative aspect-video bg-zinc-900 flex items-center justify-center">
+        {task.status === "succeeded" && videoAlive ? (
+          playing ? (
             <video
               src={task.video_url!}
-              poster={task.last_frame_url ?? undefined}
               controls
-              preload="none"
+              autoPlay
               className="w-full h-full object-cover"
             />
           ) : (
-            <span className="text-white/20 text-xs">URL expired</span>
+            <button
+              onClick={() => setPlaying(true)}
+              className="absolute inset-0 w-full h-full group"
+            >
+              {task.last_frame_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={task.last_frame_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-zinc-800" />
+              )}
+              {/* Play overlay */}
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
+                  <svg viewBox="0 0 24 24" fill="white" className="w-5 h-5 ml-0.5">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
+            </button>
           )
         ) : task.status === "failed" ? (
           <div className="text-center px-4">
