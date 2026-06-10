@@ -14,17 +14,20 @@ function getPrompt(items: ContentItem[]): string {
   return items.find((i) => i.type === "text")?.text ?? "";
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
 function VideoThumbnail({ src }: { src: string }) {
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
+    const proxySrc = `${API_BASE}/generations/proxy?url=${encodeURIComponent(src)}`;
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";
     video.muted = true;
     video.preload = "metadata";
-    video.src = src;
+    video.src = proxySrc;
 
     const capture = () => {
       video.currentTime = 0.01;

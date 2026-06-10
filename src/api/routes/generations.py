@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,28 @@ from src.repositories import generation as generation_repo
 from src.schemas.generation import GenerationRequest, TaskDB
 
 router = APIRouter(prefix="/generations", tags=["generations"])
+
+
+@router.get("/proxy", include_in_schema=False)
+async def proxy_video(url: str = Query(...)):
+    """Proxy a BytePlus video URL so the browser can read it cross-origin for canvas thumbnail."""
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    content_type = resp.headers.get("content-type", "video/mp4")
+
+    async def stream():
+        yield resp.content
+
+    return StreamingResponse(
+        stream(),
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 async def _get_admin_user_id(db: AsyncSession) -> uuid.UUID:
