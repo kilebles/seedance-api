@@ -57,7 +57,14 @@ export async function submitTask(req: GenerationRequest): Promise<Task> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+    try {
+      const json = JSON.parse(text);
+      const msg = json?.detail || json?.error?.message || json?.message;
+      if (msg) throw new Error(msg);
+    } catch (e) {
+      if (e instanceof SyntaxError === false) throw e;
+    }
+    throw new Error(`Error ${res.status}: ${text}`);
   }
   return res.json();
 }

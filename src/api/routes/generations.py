@@ -78,7 +78,18 @@ async def create_task(
     )
 
     if has_base64:
-        byteplus_task = await seedance_client.submit_generation(body)
+        try:
+            byteplus_task = await seedance_client.submit_generation(body)
+        except Exception as exc:
+            import httpx as _httpx
+            if isinstance(exc, _httpx.HTTPStatusError):
+                try:
+                    err = exc.response.json().get("error", {})
+                    msg = err.get("message") or str(exc)
+                except Exception:
+                    msg = str(exc)
+                raise HTTPException(status_code=exc.response.status_code, detail=msg)
+            raise HTTPException(status_code=502, detail=str(exc))
         task = await generation_repo.create(
             db, user_id=user_id, request=body,
             external_id=byteplus_task.id,
