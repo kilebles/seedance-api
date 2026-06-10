@@ -137,6 +137,26 @@ export default function GenerateInput({
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   }
 
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter((i) => i.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+    e.preventDefault();
+    for (const item of imageItems) {
+      const file = item.getAsFile();
+      if (!file) continue;
+      if (mode === "default") {
+        setRefImages((prev) => prev.length < MAX_REFS ? [...prev, file] : prev);
+      } else if (pendingSlot) {
+        setSlotFiles((prev) => ({ ...prev, [pendingSlot.role]: file }));
+      } else if (fixedSlots.length > 0) {
+        // fill first empty slot
+        const emptySlot = fixedSlots.find((s) => !slotFiles[s.role]);
+        if (emptySlot) setSlotFiles((prev) => ({ ...prev, [emptySlot.role]: file }));
+      }
+    }
+  }
+
   const canSubmit = !loading && !!prompt.trim();
   const showRefAdd = mode === "default" && refImages.length < MAX_REFS;
 
@@ -216,6 +236,7 @@ export default function GenerateInput({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder="Describe your video..."
           rows={3}
           className="w-full bg-transparent resize-none text-base text-white placeholder-white/25 outline-none leading-6 overflow-y-auto"
