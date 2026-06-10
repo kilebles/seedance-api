@@ -89,3 +89,15 @@ export function toDataUri(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+export async function uploadFile(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/uploads`, { method: "POST", body: form });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed ${res.status}: ${text}`);
+  }
+  const { url } = await res.json();
+  return url;
+}

@@ -11,6 +11,7 @@ import bcrypt
 
 from src.api.routes.generations import router as generations_router
 from src.api.routes.batch import router as batch_router
+from src.api.routes.uploads import router as uploads_router
 from src.core.database import AsyncSessionLocal, engine
 from src.core.logging import setup_logging
 from src.core.settings import settings
@@ -76,6 +77,7 @@ app.add_middleware(
 
 app.include_router(generations_router)
 app.include_router(batch_router)
+app.include_router(uploads_router)
 
 _NOISY_PATHS = {"/docs", "/openapi.json", "/redoc", "/health"}
 

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Topaz Labs
     topaz_api_key: str = ""
 
+    # Public base URL for file uploads (must be reachable by BytePlus)
+    public_base_url: str = "http://localhost:8000"
+
     # Background worker
     worker_poll_interval: int = 10  # seconds
     seedance_max_concurrent: int = 10  # max tasks running in BytePlus at once

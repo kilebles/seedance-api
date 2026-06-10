@@ -9,7 +9,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { toDataUri, GenerationRequest, ContentItem } from "@/lib/api";
+import { toDataUri, uploadFile, GenerationRequest, ContentItem } from "@/lib/api";
 import Settings from "@/components/Settings";
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image";
@@ -115,7 +115,9 @@ export default function GenerateInput({
         if (slot.kind === "image") {
           content.push({ type: "image_url", image_url: { url: await toDataUri(file) }, role: slot.role as ImageRole });
         } else {
-          content.push({ type: "video_url", video_url: { url: await toDataUri(file) }, role: slot.role });
+          // Videos must be public URLs — upload to server first
+          const url = await uploadFile(file);
+          content.push({ type: "video_url", video_url: { url }, role: slot.role });
         }
       }
     }
