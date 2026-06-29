@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Search } from "lucide-react";
-import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, ContentItem } from "@/lib/api";
+import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, getImageTask, ContentItem } from "@/lib/api";
 import GenerateInput from "@/components/GenerateInput";
 import TaskCard from "@/components/TaskCard";
 import { useLocalStorage } from "@/lib/useLocalStorage";
@@ -169,7 +169,7 @@ export default function Home() {
         {displayList.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
             {showImages
-              ? filteredImages.map((t) => <ImageTaskCard key={t.id} task={t} />)
+              ? filteredImages.map((t) => <ImageTaskCard key={t.id} task={t} onUpdate={(u) => setImageTasks((prev) => prev.map((x) => x.id === u.id ? u : x))} />)
               : filtered.map((t) => <TaskCard key={t.id} task={t} onUpdate={handleUpdate} />)
             }
           </div>
@@ -201,7 +201,24 @@ export default function Home() {
   );
 }
 
-function ImageTaskCard({ task }: { task: ImageTask }) {
+function ImageTaskCard({ task: initial, onUpdate }: { task: ImageTask; onUpdate: (t: ImageTask) => void }) {
+  const [task, setTask] = useState(initial);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setTask(initial); }, [initial]);
+
+  useEffect(() => {
+    if (task.status === "succeeded" || task.status === "failed") return;
+    timerRef.current = setTimeout(async () => {
+      try {
+        const updated = await getImageTask(task.id);
+        setTask(updated);
+        onUpdate(updated);
+      } catch {/* ignore */}
+    }, 3000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [task]);
+
   const promptShort = task.prompt.length > 100 ? task.prompt.slice(0, 100) + "…" : task.prompt;
   const meta = task.image_size ?? task.size_requested ?? "";
 
@@ -217,7 +234,13 @@ function ImageTaskCard({ task }: { task: ImageTask }) {
             <p className="text-white/40 text-[11px] mt-1">{task.error_message ?? task.error_code ?? ""}</p>
           </div>
         ) : (
-          <div className="w-full h-full bg-zinc-800" />
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 animate-shimmer bg-[length:200%_100%]" />
+            <div className="absolute bottom-3 left-3 flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" />
+              <span className="text-white/40 text-xs">generating</span>
+            </div>
+          </div>
         )}
       </div>
       <div className="px-3 py-2">

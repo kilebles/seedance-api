@@ -28,6 +28,12 @@ export interface ImageGenerationRequest {
   seed?: number;
 }
 
+export async function getImageTask(id: string): Promise<ImageTask> {
+  const res = await fetch(`${API_BASE}/images/tasks/${id}`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export async function submitImageTask(req: ImageGenerationRequest): Promise<ImageTask> {
   const res = await fetch(`${API_BASE}/images/tasks`, {
     method: "POST",

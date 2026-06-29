@@ -42,6 +42,18 @@ async def create(
     return task
 
 
+async def update(db: AsyncSession, task_id: uuid.UUID, **fields) -> ImageTask:
+    from datetime import datetime, timezone
+    result = await db.execute(select(ImageTask).where(ImageTask.id == task_id))
+    task = result.scalar_one()
+    for key, value in fields.items():
+        setattr(task, key, value)
+    task.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
 async def get(db: AsyncSession, task_id: uuid.UUID) -> ImageTask | None:
     result = await db.execute(select(ImageTask).where(ImageTask.id == task_id))
     return result.scalar_one_or_none()
