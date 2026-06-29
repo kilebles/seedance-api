@@ -22,8 +22,9 @@ export interface ImageTask {
 
 export interface ImageGenerationRequest {
   prompt: string;
-  image?: string; // base64 data URI or URL
+  image?: string | string[];
   size?: string;
+  output_format?: string;
   seed?: number;
 }
 

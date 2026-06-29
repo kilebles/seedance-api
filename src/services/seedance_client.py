@@ -118,6 +118,7 @@ async def generate_image(request: ImageGenerationRequest) -> dict:
         "model": request.model,
         "prompt": request.prompt,
         "watermark": request.watermark,
+        "output_format": request.output_format,
     }
     if request.image is not None:
         payload["image"] = request.image

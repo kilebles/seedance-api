@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toDataUri, uploadFile, GenerationRequest, ContentItem, ImageGenerationRequest } from "@/lib/api";
-import Settings, { GenerateMode } from "@/components/Settings";
+import Settings, { GenerateMode, ImageInputMode } from "@/components/Settings";
 
 export type ImageRole = "first_frame" | "last_frame" | "reference_image";
 export type VideoRole = "reference_video";
@@ -24,8 +24,6 @@ const MODE_LABELS: Record<Mode, string> = {
   v2v: "V2V",
 };
 
-const IMAGE_SIZES = ["2048x2048", "2848x1600", "1600x2848", "2304x1728", "1728x2304", "2K", "3K", "4K"];
-
 const MAX_REFS = 4;
 
 type SlotKind = "image" | "video";
@@ -36,6 +34,9 @@ interface Props {
   onSubmitImage: (req: ImageGenerationRequest) => void;
   loading: boolean;
   generateMode: GenerateMode; setGenerateMode: (v: GenerateMode) => void;
+  imageInputMode: ImageInputMode; setImageInputMode: (v: ImageInputMode) => void;
+  imageSize: string; setImageSize: (v: string) => void;
+  imageFormat: string; setImageFormat: (v: string) => void;
   ratio: string; setRatio: (v: string) => void;
   resolution: string; setResolution: (v: string) => void;
   duration: number; setDuration: (v: number) => void;
@@ -47,22 +48,28 @@ interface Props {
 export default function GenerateInput({
   onSubmit, onSubmitImage, loading,
   generateMode, setGenerateMode,
+  imageInputMode, setImageInputMode,
+  imageSize, setImageSize,
+  imageFormat, setImageFormat,
   ratio, setRatio, resolution, setResolution,
   duration, setDuration, generateAudio, setGenerateAudio,
   seed, setSeed, upscaleResolution, setUpscaleResolution,
 }: Props) {
   const [prompt, setPrompt] = useState("");
+
+  // video mode state
   const [mode, setMode] = useState<Mode>("default");
   const [refImages, setRefImages] = useState<File[]>([]);
   const [slotFiles, setSlotFiles] = useState<Partial<Record<string, File>>>({});
 
-  // image generation state
-  const [imageRefFile, setImageRefFile] = useState<File | null>(null);
-  const [imageSize, setImageSize] = useState("2048x2048");
+  // image mode state — slot1 = first image, slot2 = second image (reblend only)
+  const [imgSlot1, setImgSlot1] = useState<File | null>(null);
+  const [imgSlot2, setImgSlot2] = useState<File | null>(null);
 
   const imgInputRef = useRef<HTMLInputElement>(null);
   const vidInputRef = useRef<HTMLInputElement>(null);
-  const imageRefInputRef = useRef<HTMLInputElement>(null);
+  const imgSlot1Ref = useRef<HTMLInputElement>(null);
+  const imgSlot2Ref = useRef<HTMLInputElement>(null);
   const [pendingSlot, setPendingSlot] = useState<Slot | null>(null);
 
   const fixedSlots: Slot[] = mode === "first_frame" ? [{ role: "first_frame", label: "First frame", kind: "image" }]
@@ -92,12 +99,6 @@ export default function GenerateInput({
     e.target.value = "";
   }
 
-  function handleImageRefChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) setImageRefFile(file);
-    e.target.value = "";
-  }
-
   function removeRef(idx: number) {
     setRefImages((prev) => prev.filter((_, i) => i !== idx));
   }
@@ -116,16 +117,30 @@ export default function GenerateInput({
     if (loading || !prompt.trim()) return;
 
     if (generateMode === "image") {
-      const req: ImageGenerationRequest = { prompt: prompt.trim() };
-      if (imageRefFile) req.image = await toDataUri(imageRefFile);
-      if (imageSize) req.size = imageSize;
-      if (seed !== null) req.seed = seed;
+      const req: ImageGenerationRequest = {
+        prompt: prompt.trim(),
+        size: imageSize,
+        output_format: imageFormat,
+        ...(seed !== null ? { seed } : {}),
+      };
+
+      if (imageInputMode === "i2i" && imgSlot1) {
+        req.image = await toDataUri(imgSlot1);
+      } else if (imageInputMode === "reblend") {
+        const images: string[] = [];
+        if (imgSlot1) images.push(await toDataUri(imgSlot1));
+        if (imgSlot2) images.push(await toDataUri(imgSlot2));
+        if (images.length > 0) req.image = images;
+      }
+
       onSubmitImage(req);
       setPrompt("");
-      setImageRefFile(null);
+      setImgSlot1(null);
+      setImgSlot2(null);
       return;
     }
 
+    // video mode
     const content: ContentItem[] = [];
     if (mode === "default") {
       for (const file of refImages) {
@@ -143,7 +158,6 @@ export default function GenerateInput({
         }
       }
     }
-
     content.push({ type: "text", text: prompt.trim() });
 
     onSubmit({
@@ -170,7 +184,11 @@ export default function GenerateInput({
       const file = item.getAsFile();
       if (!file) continue;
       if (generateMode === "image") {
-        setImageRefFile(file);
+        if (imageInputMode === "reblend" && imgSlot1) {
+          setImgSlot2(file);
+        } else {
+          setImgSlot1(file);
+        }
       } else if (mode === "default") {
         setRefImages((prev) => prev.length < MAX_REFS ? [...prev, file] : prev);
       } else if (pendingSlot) {
@@ -184,10 +202,20 @@ export default function GenerateInput({
 
   const canSubmit = !loading && !!prompt.trim();
   const showRefAdd = generateMode === "video" && mode === "default" && refImages.length < MAX_REFS;
-
   const hasRefMedia = generateMode === "video" && mode === "default" && refImages.length > 0;
   const hasFixedMedia = generateMode === "video" && mode !== "default" && fixedSlots.length > 0;
-  const showMediaRow = hasRefMedia || hasFixedMedia || (generateMode === "image" && imageRefFile);
+
+  // image mode — show slots when mode requires images
+  const needsImageSlots = generateMode === "image" && imageInputMode !== "t2i";
+  const showMediaRow = hasRefMedia || hasFixedMedia || (needsImageSlots && (imgSlot1 || imgSlot2));
+  const showImageSlotPlaceholders = needsImageSlots && !imgSlot1 && !imgSlot2;
+
+  // label for image input mode shown left of settings
+  const IMAGE_MODE_LABELS: Record<ImageInputMode, string> = {
+    t2i: "Text → Image",
+    i2i: "Image → Image",
+    reblend: "Reblend",
+  };
 
   return (
     <div className="w-full">
@@ -197,23 +225,28 @@ export default function GenerateInput({
         {showMediaRow && (
           <div className="flex gap-2 flex-wrap">
             {generateMode === "image" ? (
-              imageRefFile && (
-                <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={URL.createObjectURL(imageRefFile)} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => setImageRefFile(null)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5">
-                    <X size={10} />
-                  </button>
-                </div>
-              )
+              <>
+                {imgSlot1 && (
+                  <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={URL.createObjectURL(imgSlot1)} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => setImgSlot1(null)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5"><X size={10} /></button>
+                  </div>
+                )}
+                {imageInputMode === "reblend" && imgSlot2 && (
+                  <div className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={URL.createObjectURL(imgSlot2)} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => setImgSlot2(null)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5"><X size={10} /></button>
+                  </div>
+                )}
+              </>
             ) : mode === "default" ? (
               refImages.map((file, idx) => (
                 <div key={idx} className="relative w-14 h-14 rounded-xl overflow-hidden shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => removeRef(idx)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5">
-                    <X size={10} />
-                  </button>
+                  <button onClick={() => removeRef(idx)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5"><X size={10} /></button>
                 </div>
               ))
             ) : (
@@ -229,15 +262,10 @@ export default function GenerateInput({
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-white/40 text-[10px] px-1 text-center">{file.name.slice(0, 12)}</div>
                         )}
-                        <button onClick={() => removeSlot(slot.role)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5">
-                          <X size={10} />
-                        </button>
+                        <button onClick={() => removeSlot(slot.role)} className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5"><X size={10} /></button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => openSlotPicker(slot)}
-                        className="w-14 h-14 rounded-xl border border-dashed border-white/15 flex flex-col items-center justify-center text-white/35 hover:border-white/30 hover:text-white/55 transition-colors gap-1"
-                      >
+                      <button onClick={() => openSlotPicker(slot)} className="w-14 h-14 rounded-xl border border-dashed border-white/15 flex flex-col items-center justify-center text-white/35 hover:border-white/30 hover:text-white/55 transition-colors gap-1">
                         <ImagePlus size={14} />
                         <span className="text-[10px]">{slot.label}</span>
                       </button>
@@ -249,15 +277,27 @@ export default function GenerateInput({
           </div>
         )}
 
+        {/* Image slot placeholders */}
+        {showImageSlotPlaceholders && (
+          <div className="flex gap-2">
+            <button onClick={() => imgSlot1Ref.current?.click()} className="w-14 h-14 rounded-xl border border-dashed border-white/15 flex flex-col items-center justify-center text-white/35 hover:border-white/30 hover:text-white/55 transition-colors gap-1 shrink-0">
+              <ImagePlus size={14} />
+              <span className="text-[10px]">{imageInputMode === "reblend" ? "Image 1" : "Image"}</span>
+            </button>
+            {imageInputMode === "reblend" && (
+              <button onClick={() => imgSlot2Ref.current?.click()} className="w-14 h-14 rounded-xl border border-dashed border-white/15 flex flex-col items-center justify-center text-white/35 hover:border-white/30 hover:text-white/55 transition-colors gap-1 shrink-0">
+                <ImagePlus size={14} />
+                <span className="text-[10px]">Image 2</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Fixed slots placeholder (video mode) */}
         {generateMode === "video" && mode !== "default" && !hasFixedMedia && (
           <div className="flex gap-2">
             {fixedSlots.map((slot) => (
-              <button
-                key={slot.role}
-                onClick={() => openSlotPicker(slot)}
-                className="w-14 h-14 rounded-xl border border-dashed border-white/15 flex flex-col items-center justify-center text-white/35 hover:border-white/30 hover:text-white/55 transition-colors gap-1 shrink-0"
-              >
+              <button key={slot.role} onClick={() => openSlotPicker(slot)} className="w-14 h-14 rounded-xl border border-dashed border-white/15 flex flex-col items-center justify-center text-white/35 hover:border-white/30 hover:text-white/55 transition-colors gap-1 shrink-0">
                 <ImagePlus size={14} />
                 <span className="text-[10px]">{slot.label}</span>
               </button>
@@ -281,26 +321,28 @@ export default function GenerateInput({
         <div className="flex items-center gap-1">
           {/* + image button */}
           {generateMode === "image" ? (
-            <button
-              onClick={() => imageRefInputRef.current?.click()}
-              title="Add reference image"
-              className="w-8 h-8 flex items-center justify-center rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <ImagePlus size={17} />
-            </button>
+            needsImageSlots && (
+              <>
+                {!imgSlot1 && (
+                  <button onClick={() => imgSlot1Ref.current?.click()} title={imageInputMode === "reblend" ? "Add image 1" : "Add image"} className="w-8 h-8 flex items-center justify-center rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors">
+                    <ImagePlus size={17} />
+                  </button>
+                )}
+                {imageInputMode === "reblend" && imgSlot1 && !imgSlot2 && (
+                  <button onClick={() => imgSlot2Ref.current?.click()} title="Add image 2" className="w-8 h-8 flex items-center justify-center rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors">
+                    <ImagePlus size={17} />
+                  </button>
+                )}
+              </>
+            )
           ) : mode === "default" ? (
-            <button
-              onClick={openRefPicker}
-              disabled={!showRefAdd}
-              title="Add image"
-              className="w-8 h-8 flex items-center justify-center rounded-full text-white/40 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-            >
+            <button onClick={openRefPicker} disabled={!showRefAdd} title="Add image" className="w-8 h-8 flex items-center justify-center rounded-full text-white/40 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
               <ImagePlus size={17} />
             </button>
           ) : null}
 
-          {/* Mode dropdown (video only) */}
-          {generateMode === "video" && (
+          {/* Mode label / dropdown */}
+          {generateMode === "video" ? (
             <DropdownMenu>
               <DropdownMenuTrigger className="flex items-center gap-1 text-xs text-white/35 hover:text-white/65 transition-colors whitespace-nowrap bg-transparent border-none outline-none cursor-pointer px-1">
                 {MODE_LABELS[mode]}
@@ -309,32 +351,13 @@ export default function GenerateInput({
               <DropdownMenuContent align="start" className="bg-zinc-900 border-white/10 text-white min-w-40">
                 <DropdownMenuRadioGroup value={mode} onValueChange={(v) => changeMode(v as Mode)}>
                   {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
-                    <DropdownMenuRadioItem key={m} value={m} className="text-sm cursor-pointer">
-                      {MODE_LABELS[m]}
-                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem key={m} value={m} className="text-sm cursor-pointer">{MODE_LABELS[m]}</DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-
-          {/* Size dropdown (image only) */}
-          {generateMode === "image" && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-1 text-xs text-white/35 hover:text-white/65 transition-colors whitespace-nowrap bg-transparent border-none outline-none cursor-pointer px-1">
-                {imageSize}
-                <ChevronDown size={11} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="bg-zinc-900 border-white/10 text-white min-w-36">
-                <DropdownMenuRadioGroup value={imageSize} onValueChange={setImageSize}>
-                  {IMAGE_SIZES.map((s) => (
-                    <DropdownMenuRadioItem key={s} value={s} className="text-sm cursor-pointer">
-                      {s}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          ) : (
+            <span className="text-xs text-white/35 px-1">{IMAGE_MODE_LABELS[imageInputMode]}</span>
           )}
 
           <div className="flex-1" />
@@ -342,6 +365,9 @@ export default function GenerateInput({
           {/* Settings */}
           <Settings
             generateMode={generateMode} setGenerateMode={setGenerateMode}
+            imageInputMode={imageInputMode} setImageInputMode={setImageInputMode}
+            imageSize={imageSize} setImageSize={setImageSize}
+            imageFormat={imageFormat} setImageFormat={setImageFormat}
             ratio={ratio} setRatio={setRatio}
             resolution={resolution} setResolution={setResolution}
             duration={duration} setDuration={setDuration}
@@ -355,11 +381,7 @@ export default function GenerateInput({
           </Settings>
 
           {/* Send */}
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-black hover:bg-white/90 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
-          >
+          <button onClick={handleSubmit} disabled={!canSubmit} className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-black hover:bg-white/90 disabled:opacity-25 disabled:cursor-not-allowed transition-all">
             <ArrowUp size={16} />
           </button>
         </div>
@@ -367,7 +389,8 @@ export default function GenerateInput({
 
       <input ref={imgInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFileChange} />
       <input ref={vidInputRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={handleFileChange} />
-      <input ref={imageRefInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageRefChange} />
+      <input ref={imgSlot1Ref} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setImgSlot1(f); e.target.value = ""; }} />
+      <input ref={imgSlot2Ref} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setImgSlot2(f); e.target.value = ""; }} />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask,
 import GenerateInput from "@/components/GenerateInput";
 import TaskCard from "@/components/TaskCard";
 import { useLocalStorage } from "@/lib/useLocalStorage";
-import { GenerateMode } from "@/components/Settings";
+import { GenerateMode, ImageInputMode } from "@/components/Settings";
 
 function getPrompt(items: ContentItem[]): string {
   return items.find((i) => i.type === "text")?.text ?? "";
@@ -29,6 +29,9 @@ export default function Home() {
   const [showExpired, setShowExpired] = useLocalStorage("sd_show_expired", false);
 
   const [generateMode, setGenerateMode] = useLocalStorage<GenerateMode>("sd_generate_mode", "video");
+  const [imageInputMode, setImageInputMode] = useLocalStorage<ImageInputMode>("sd_image_input_mode", "t2i");
+  const [imageSize, setImageSize] = useLocalStorage("sd_image_size", "2048x2048");
+  const [imageFormat, setImageFormat] = useLocalStorage("sd_image_format", "jpeg");
 
   useEffect(() => {
     listTasks().then(setTasks).catch(() => {});
@@ -182,6 +185,9 @@ export default function Home() {
             onSubmitImage={handleSubmitImage}
             loading={loading}
             generateMode={generateMode} setGenerateMode={setGenerateMode}
+            imageInputMode={imageInputMode} setImageInputMode={setImageInputMode}
+            imageSize={imageSize} setImageSize={setImageSize}
+            imageFormat={imageFormat} setImageFormat={setImageFormat}
             ratio={ratio} setRatio={setRatio}
             resolution={resolution} setResolution={setResolution}
             duration={duration} setDuration={setDuration}

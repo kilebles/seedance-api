@@ -8,25 +8,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ImageGenerationRequest(BaseModel):
     model: str = Field(
-        default="seedream-5-0-lite",
+        default="seedream-5-0-260128",
         description="Seedream model ID for image generation",
     )
     prompt: str = Field(description="Text prompt for image generation")
-    # URL or base64 (data:image/<fmt>;base64,...)
-    image: str | list[str] | None = Field(
-        default=None,
-        description="Reference image(s): URL or base64-encoded string",
-    )
-    size: str | None = Field(
-        default=None,
-        description="Output image dimensions, e.g. '2048x2048' or '2K'/'3K'/'4K'",
-    )
+    # single URL/base64, or list of URLs/base64 for multi-image reblending
+    image: str | list[str] | None = Field(default=None)
+    size: str | None = Field(default=None, description="e.g. '2048x2048', '2K', '3K', '4K'")
+    output_format: str = Field(default="jpeg", description="'jpeg' or 'png'")
     watermark: bool = Field(default=False)
     seed: int | None = Field(default=None, ge=-1, le=2147483647)
-
-
-class ImageTaskStatus(str):
-    pass
 
 
 class ImageTaskDB(BaseModel):
