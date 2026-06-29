@@ -2,6 +2,51 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "expired" | "cancelled";
 
+export interface ImageTask {
+  id: string;
+  status: "succeeded" | "failed";
+  model: string;
+  prompt: string;
+  size_requested: string | null;
+  watermark: boolean;
+  seed_requested: number | null;
+  created_at: string;
+  updated_at: string;
+  image_url: string | null;
+  image_size: string | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export interface ImageGenerationRequest {
+  prompt: string;
+  image?: string; // base64 data URI or URL
+  size?: string;
+  seed?: number;
+}
+
+export async function submitImageTask(req: ImageGenerationRequest): Promise<ImageTask> {
+  const res = await fetch(`${API_BASE}/images/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text);
+      const msg = json?.detail || json?.error?.message || json?.message;
+      if (msg) throw new Error(msg);
+    } catch (e) {
+      if (e instanceof SyntaxError === false) throw e;
+    }
+    throw new Error(`Error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export interface Task {
   id: string;
   status: TaskStatus;

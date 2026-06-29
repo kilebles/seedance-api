@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 
+export type GenerateMode = "video" | "image";
+
 interface Props {
+  generateMode: GenerateMode; setGenerateMode: (v: GenerateMode) => void;
   ratio: string; setRatio: (v: string) => void;
   resolution: string; setResolution: (v: string) => void;
   duration: number; setDuration: (v: number) => void;
@@ -44,6 +47,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 
 export default function Settings({
   children,
+  generateMode, setGenerateMode,
   ratio, setRatio, resolution, setResolution,
   duration, setDuration, generateAudio, setGenerateAudio,
   seed, setSeed, upscaleResolution, setUpscaleResolution,
@@ -62,32 +66,59 @@ export default function Settings({
               <button onClick={() => setOpen(false)} className="text-white/35 hover:text-white"><X size={16} /></button>
             </div>
 
+            {/* Mode switch */}
             <div>
-              <p className="text-xs text-white/35 mb-2">Aspect ratio</p>
-              <div className="flex flex-wrap gap-1.5">
-                {RATIOS.map((r) => <Pill key={r} active={ratio === r} onClick={() => setRatio(r)}>{r}</Pill>)}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs text-white/35 mb-2">Resolution</p>
+              <p className="text-xs text-white/35 mb-2">Mode</p>
               <div className="flex gap-1.5">
-                {RESOLUTIONS.map((r) => <Pill key={r} active={resolution === r} onClick={() => setResolution(r)}>{r}</Pill>)}
+                <Pill active={generateMode === "video"} onClick={() => setGenerateMode("video")}>Video</Pill>
+                <Pill active={generateMode === "image"} onClick={() => setGenerateMode("image")}>Image</Pill>
               </div>
             </div>
 
-            <div>
-              <p className="text-xs text-white/35 mb-2">Duration</p>
-              <div className="flex flex-wrap gap-1.5">
-                {DURATIONS.map((d) => <Pill key={d} active={duration === d} onClick={() => setDuration(d)}>{d}s</Pill>)}
-              </div>
-            </div>
+            {/* Video-only settings */}
+            {generateMode === "video" && (
+              <>
+                <div>
+                  <p className="text-xs text-white/35 mb-2">Aspect ratio</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {RATIOS.map((r) => <Pill key={r} active={ratio === r} onClick={() => setRatio(r)}>{r}</Pill>)}
+                  </div>
+                </div>
 
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-white/55">Generate audio</p>
-              <Toggle on={generateAudio} onToggle={() => setGenerateAudio(!generateAudio)} />
-            </div>
+                <div>
+                  <p className="text-xs text-white/35 mb-2">Resolution</p>
+                  <div className="flex gap-1.5">
+                    {RESOLUTIONS.map((r) => <Pill key={r} active={resolution === r} onClick={() => setResolution(r)}>{r}</Pill>)}
+                  </div>
+                </div>
 
+                <div>
+                  <p className="text-xs text-white/35 mb-2">Duration</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DURATIONS.map((d) => <Pill key={d} active={duration === d} onClick={() => setDuration(d)}>{d}s</Pill>)}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-white/55">Generate audio</p>
+                  <Toggle on={generateAudio} onToggle={() => setGenerateAudio(!generateAudio)} />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-white/55">Upscale (Topaz)</p>
+                    <Toggle on={!!upscaleResolution} onToggle={() => setUpscaleResolution(upscaleResolution ? null : "1080p")} />
+                  </div>
+                  {upscaleResolution && (
+                    <div className="flex gap-1.5 mt-2">
+                      {UPSCALE_OPTIONS.map((o) => <Pill key={o} active={upscaleResolution === o} onClick={() => setUpscaleResolution(o)}>{o}</Pill>)}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Shared: seed */}
             <div>
               <div className="flex items-center justify-between">
                 <p className="text-sm text-white/55">Fixed seed</p>
@@ -99,18 +130,6 @@ export default function Settings({
                   onChange={(e) => setSeed(Number(e.target.value))}
                   className="mt-2 w-full bg-white/5 rounded-xl px-3 py-2 text-sm text-white outline-none"
                 />
-              )}
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-white/55">Upscale (Topaz)</p>
-                <Toggle on={!!upscaleResolution} onToggle={() => setUpscaleResolution(upscaleResolution ? null : "1080p")} />
-              </div>
-              {upscaleResolution && (
-                <div className="flex gap-1.5 mt-2">
-                  {UPSCALE_OPTIONS.map((o) => <Pill key={o} active={upscaleResolution === o} onClick={() => setUpscaleResolution(o)}>{o}</Pill>)}
-                </div>
               )}
             </div>
 

@@ -164,6 +164,17 @@ def _get_task(task_id: str) -> dict:
     return resp.json()
 
 
+def _submit_image(prompt: str, image_bytes: bytes | None, image_mime: str | None, size: str | None) -> dict:
+    payload: dict = {"prompt": prompt}
+    if image_bytes:
+        payload["image"] = _to_data_uri(image_bytes, image_mime)
+    if size:
+        payload["size"] = size
+    resp = httpx.post(f"{API_BASE}/images/tasks", json=payload, timeout=60)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _list_tasks() -> list[dict]:
     resp = httpx.get(f"{API_BASE}/generations/tasks", timeout=10)
     resp.raise_for_status()
@@ -190,177 +201,220 @@ tab_generate, tab_batch, tab_history, tab_yadisk = st.tabs(["Generate", "Batch",
 
 # ── Generate tab ──────────────────────────────────────────────────────────────
 with tab_generate:
-    upscale = st.checkbox("Upscale (Topaz)", value=False, key="g_upscale")
-    upscale_res = st.selectbox(
-        "Upscale resolution",
-        ["1080p", "4k"],
-        key="g_upscale_res",
-    )
+    gen_mode = st.radio("Mode", ["Video", "Image"], horizontal=True, key="gen_mode")
 
-    with st.form("generate_form"):
-        prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...")
+    # ── Image generation ──────────────────────────────────────────────────────
+    if gen_mode == "Image":
+        IMAGE_SIZES = ["2048x2048", "2848x1600", "1600x2848", "2304x1728", "1728x2304", "2K", "3K", "4K"]
 
-        col_img1, col_img2 = st.columns(2)
-        with col_img1:
-            uploaded = st.file_uploader(
-                "Первый кадр (необязательно)",
+        if "image_tasks" not in st.session_state:
+            st.session_state["image_tasks"] = []
+
+        with st.form("image_form"):
+            img_prompt = st.text_area("Prompt", height=100, placeholder="Опишите изображение...")
+            img_uploaded = st.file_uploader(
+                "Референс (необязательно)",
                 type=["jpg", "jpeg", "png", "webp"],
+                key="img_ref",
             )
-        with col_img2:
-            uploaded_last = st.file_uploader(
-                "Последний кадр (необязательно)",
-                type=["jpg", "jpeg", "png", "webp"],
-            )
+            img_size = st.selectbox("Size", IMAGE_SIZES, index=0)
+            img_submitted = st.form_submit_button("Generate image", type="primary")
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            ratio = st.selectbox(
-                "Aspect ratio",
-                ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-            )
-        with col2:
-            resolution = st.selectbox("Resolution", ["720p", "480p"])
-        with col3:
-            duration = st.selectbox(
-                "Duration (s)",
-                [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-                index=4,
-                format_func=lambda x: f"{x}s",
-            )
+        if img_submitted:
+            if not img_prompt.strip():
+                st.error("Prompt is required.")
+            else:
+                img_bytes = img_uploaded.read() if img_uploaded else None
+                img_mime = img_uploaded.type if img_uploaded else None
+                with st.spinner("Generating image..."):
+                    try:
+                        result = _submit_image(img_prompt.strip(), img_bytes, img_mime, img_size)
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
+                        result = None
+                if result:
+                    st.session_state["image_tasks"].insert(0, result)
+                    if result.get("status") == "succeeded":
+                        st.rerun()
+                    else:
+                        st.error(f"Failed: {result.get('error_message') or result.get('error_code') or 'unknown'}")
 
-        generate_audio = st.checkbox("Generate audio", value=True)
+        img_tasks = st.session_state.get("image_tasks", [])
+        if img_tasks:
+            st.divider()
+            st.caption(f"Сгенерировано в этой сессии: {len(img_tasks)}")
+            cols = st.columns(3)
+            for i, t in enumerate(img_tasks):
+                with cols[i % 3]:
+                    if t.get("image_url"):
+                        st.image(t["image_url"], use_container_width=True)
+                    elif t.get("status") == "failed":
+                        st.error(t.get("error_message") or t.get("error_code") or "failed")
+                    prompt_short = (t["prompt"][:80] + "…") if len(t.get("prompt", "")) > 80 else t.get("prompt", "")
+                    meta = f"`{t.get('image_size') or t.get('size_requested') or ''}`"
+                    st.caption(f"{meta}  \n{prompt_short}")
 
-        col_seed1, col_seed2 = st.columns([1, 2])
-        with col_seed1:
-            fixed_seed = st.checkbox("Fixed seed", value=False)
-        with col_seed2:
-            seed_value = st.number_input(
-                "Seed", min_value=0, max_value=4294967295, value=0, step=1,
-                disabled=not fixed_seed, label_visibility="collapsed",
-            )
+    # ── Video generation ──────────────────────────────────────────────────────
+    else:
+        if "generate_tasks" not in st.session_state:
+            st.session_state["generate_tasks"] = []
 
-        submitted = st.form_submit_button("Generate", type="primary")
+        upscale = st.checkbox("Upscale (Topaz)", value=False, key="g_upscale")
+        upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="g_upscale_res")
 
-    # Session history for this tab
-    if "generate_tasks" not in st.session_state:
-        st.session_state["generate_tasks"] = []
+        with st.form("generate_form"):
+            prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...")
 
-    if submitted:
-        if not prompt.strip():
-            st.error("Prompt is required.")
-        else:
-            image_bytes = uploaded.read() if uploaded else None
-            image_mime = uploaded.type if uploaded else None
-            last_frame_bytes = uploaded_last.read() if uploaded_last else None
-            last_frame_mime = uploaded_last.type if uploaded_last else None
-            dur = int(duration)
-            seed = int(seed_value) if fixed_seed else None
+            col_img1, col_img2 = st.columns(2)
+            with col_img1:
+                uploaded = st.file_uploader(
+                    "Первый кадр (необязательно)",
+                    type=["jpg", "jpeg", "png", "webp"],
+                )
+            with col_img2:
+                uploaded_last = st.file_uploader(
+                    "Последний кадр (необязательно)",
+                    type=["jpg", "jpeg", "png", "webp"],
+                )
 
-            with st.spinner("Submitting task..."):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"])
+            with col2:
+                resolution = st.selectbox("Resolution", ["720p", "480p"])
+            with col3:
+                duration = st.selectbox(
+                    "Duration (s)",
+                    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                    index=4,
+                    format_func=lambda x: f"{x}s",
+                )
+
+            generate_audio = st.checkbox("Generate audio", value=True)
+
+            col_seed1, col_seed2 = st.columns([1, 2])
+            with col_seed1:
+                fixed_seed = st.checkbox("Fixed seed", value=False)
+            with col_seed2:
+                seed_value = st.number_input(
+                    "Seed", min_value=0, max_value=4294967295, value=0, step=1,
+                    disabled=not fixed_seed, label_visibility="collapsed",
+                )
+
+            submitted = st.form_submit_button("Generate", type="primary")
+
+        if submitted:
+            if not prompt.strip():
+                st.error("Prompt is required.")
+            else:
+                image_bytes = uploaded.read() if uploaded else None
+                image_mime = uploaded.type if uploaded else None
+                last_frame_bytes = uploaded_last.read() if uploaded_last else None
+                last_frame_mime = uploaded_last.type if uploaded_last else None
+                dur = int(duration)
+                seed = int(seed_value) if fixed_seed else None
+
+                with st.spinner("Submitting task..."):
+                    try:
+                        task = _submit(
+                            prompt=prompt.strip(),
+                            image_bytes=image_bytes,
+                            image_mime=image_mime,
+                            last_frame_bytes=last_frame_bytes,
+                            last_frame_mime=last_frame_mime,
+                            ratio=ratio,
+                            resolution=resolution,
+                            duration=dur,
+                            generate_audio=generate_audio,
+                            seed=seed,
+                            upscale_resolution=upscale_res if upscale else None,
+                        )
+                    except Exception as e:
+                        st.error(f"Failed to submit: {e}")
+                        st.stop()
+
+                task_id = task["id"]
+                st.session_state["generate_tasks"].insert(0, {
+                    "id": task_id,
+                    "prompt": prompt.strip(),
+                    "resolution": resolution,
+                    "ratio": ratio,
+                    "upscale_resolution": upscale_res if upscale else None,
+                })
+
+                status_box = st.empty()
+                progress_bar = st.progress(0)
+                statuses = {"queued": 10, "running": 50, "succeeded": 100, "failed": 100, "expired": 100}
+
+                while True:
+                    try:
+                        task = _get_task(task_id)
+                    except Exception as e:
+                        status_box.error(f"Polling error: {e}")
+                        break
+
+                    cur_status = task.get("status", "queued")
+                    progress_bar.progress(statuses.get(cur_status, 10))
+                    status_box.info(f"Status: **{cur_status}**")
+
+                    if cur_status == "succeeded":
+                        status_box.empty()
+                        progress_bar.empty()
+                        st.rerun()
+                        break
+                    elif cur_status in ("failed", "expired"):
+                        st.error(f"Task {cur_status}: {task.get('error_message') or task.get('error_code') or 'unknown error'}")
+                        break
+
+                    time.sleep(POLL_INTERVAL)
+
+        gen_tasks = st.session_state.get("generate_tasks", [])
+        if gen_tasks:
+            st.divider()
+            st.caption(f"Сгенерировано в этой сессии: {len(gen_tasks)}")
+            cols = st.columns(3)
+            for i, entry in enumerate(gen_tasks):
+                tid = entry["id"]
                 try:
-                    task = _submit(
-                        prompt=prompt.strip(),
-                        image_bytes=image_bytes,
-                        image_mime=image_mime,
-                        last_frame_bytes=last_frame_bytes,
-                        last_frame_mime=last_frame_mime,
-                        ratio=ratio,
-                        resolution=resolution,
-                        duration=dur,
-                        generate_audio=generate_audio,
-                        seed=seed,
-                        upscale_resolution=upscale_res if upscale else None,
-                    )
-                except Exception as e:
-                    st.error(f"Failed to submit: {e}")
-                    st.stop()
+                    t = _get_task(tid)
+                except Exception:
+                    t = {"id": tid, "status": "?"}
+                cur_status = t.get("status", "?")
+                video_url = t.get("video_url")
+                last_frame = t.get("last_frame_url")
+                prompt_text = entry.get("prompt", "")
+                res = t.get("resolution_actual") or entry.get("resolution", "")
+                ratio_val = t.get("ratio_actual") or entry.get("ratio", "")
+                upscale_val = entry.get("upscale_resolution")
+                duration_val = t.get("duration_actual")
 
-            task_id = task["id"]
-            # Track in session
-            st.session_state["generate_tasks"].insert(0, {
-                "id": task_id,
-                "prompt": prompt.strip(),
-                "resolution": resolution,
-                "ratio": ratio,
-                "upscale_resolution": upscale_res if upscale else None,
-            })
-
-            status_box = st.empty()
-            progress_bar = st.progress(0)
-            statuses = {"queued": 10, "running": 50, "succeeded": 100, "failed": 100, "expired": 100}
-
-            while True:
-                try:
-                    task = _get_task(task_id)
-                except Exception as e:
-                    status_box.error(f"Polling error: {e}")
-                    break
-
-                cur_status = task.get("status", "queued")
-                progress_bar.progress(statuses.get(cur_status, 10))
-                status_box.info(f"Status: **{cur_status}**")
-
-                if cur_status == "succeeded":
-                    status_box.empty()
-                    progress_bar.empty()
-                    st.rerun()
-                    break
-                elif cur_status in ("failed", "expired"):
-                    st.error(f"Task {cur_status}: {task.get('error_message') or task.get('error_code') or 'unknown error'}")
-                    break
-
-                time.sleep(POLL_INTERVAL)
-
-    # ── Generated results grid ────────────────────────────────────────────────
-    gen_tasks = st.session_state.get("generate_tasks", [])
-    if gen_tasks:
-        st.divider()
-        st.caption(f"Сгенерировано в этой сессии: {len(gen_tasks)}")
-        cols = st.columns(3)
-        for i, entry in enumerate(gen_tasks):
-            tid = entry["id"]
-            try:
-                t = _get_task(tid)
-            except Exception:
-                t = {"id": tid, "status": "?"}
-            cur_status = t.get("status", "?")
-            video_url = t.get("video_url")
-            last_frame = t.get("last_frame_url")
-            prompt_text = entry.get("prompt", "")
-            res = t.get("resolution_actual") or entry.get("resolution", "")
-            ratio_val = t.get("ratio_actual") or entry.get("ratio", "")
-            upscale_val = entry.get("upscale_resolution")
-            duration_val = t.get("duration_actual")
-
-            with cols[i % 3]:
-                if cur_status == "succeeded":
-                    if video_url:
-                        if last_frame:
-                            # Show thumbnail; video loads on expand
-                            with st.expander("▶ Смотреть видео", expanded=False):
+                with cols[i % 3]:
+                    if cur_status == "succeeded":
+                        if video_url:
+                            if last_frame:
+                                with st.expander("▶ Смотреть видео", expanded=False):
+                                    st.video(video_url)
+                                st.image(last_frame, use_container_width=True)
+                            else:
                                 st.video(video_url)
+                        elif last_frame:
                             st.image(last_frame, use_container_width=True)
                         else:
-                            st.video(video_url)
-                    elif last_frame:
-                        st.image(last_frame, use_container_width=True)
+                            st.info("URL истёк")
+                    elif cur_status in ("queued", "running"):
+                        st.markdown(f"⚙️ **{cur_status}**")
+                    elif cur_status == "failed":
+                        st.error(f"failed: {t.get('error_message') or t.get('error_code') or ''}")
                     else:
-                        st.info("URL истёк")
-                elif cur_status in ("queued", "running"):
-                    st.markdown(f"⚙️ **{cur_status}**")
-                elif cur_status == "failed":
-                    st.error(f"failed: {t.get('error_message') or t.get('error_code') or ''}")
-                else:
-                    st.caption(cur_status)
+                        st.caption(cur_status)
 
-                # Meta
-                prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
-                meta = f"`{res} {ratio_val}`"
-                if duration_val:
-                    meta += f" `{duration_val}s`"
-                if upscale_val:
-                    meta += f" `→{upscale_val}`"
-                st.caption(f"{meta}  \n{prompt_short}")
+                    prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
+                    meta = f"`{res} {ratio_val}`"
+                    if duration_val:
+                        meta += f" `{duration_val}s`"
+                    if upscale_val:
+                        meta += f" `→{upscale_val}`"
+                    st.caption(f"{meta}  \n{prompt_short}")
 
 # ── Batch tab ─────────────────────────────────────────────────────────────────
 with tab_batch:
