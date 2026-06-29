@@ -112,6 +112,9 @@ async def get_task(task_id: str) -> TaskResultResponse:
 _IMAGES_PATH = "/api/v3/images/generations"
 
 
+_IMAGE_TIMEOUT = httpx.Timeout(180.0, connect=10.0)
+
+
 async def generate_image(request: ImageGenerationRequest) -> dict:
     """Call BytePlus image generation API (synchronous, returns URL immediately)."""
     payload: dict = {
@@ -134,7 +137,11 @@ async def generate_image(request: ImageGenerationRequest) -> dict:
     )
     logger.debug("Image request payload: {payload}", payload={k: v for k, v in payload.items() if k != "image"})
 
-    async with _make_client() as client:
+    async with httpx.AsyncClient(
+        base_url=settings.seedance_base_url,
+        headers={"Authorization": f"Bearer {settings.seedance_api_key}", "Content-Type": "application/json"},
+        timeout=_IMAGE_TIMEOUT,
+    ) as client:
         response = await client.post(_IMAGES_PATH, json=payload)
 
     logger.debug(
