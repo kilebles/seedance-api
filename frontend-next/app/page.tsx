@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search } from "lucide-react";
-import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, getImageTask, ContentItem } from "@/lib/api";
+import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, listImageTasks, getImageTask, ContentItem } from "@/lib/api";
 import GenerateInput from "@/components/GenerateInput";
 import TaskCard from "@/components/TaskCard";
 import { useLocalStorage } from "@/lib/useLocalStorage";
@@ -35,6 +35,7 @@ export default function Home() {
 
   useEffect(() => {
     listTasks().then(setTasks).catch(() => {});
+    listImageTasks().then(setImageTasks).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {

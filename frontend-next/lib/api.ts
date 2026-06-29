@@ -34,6 +34,12 @@ export async function getImageTask(id: string): Promise<ImageTask> {
   return res.json();
 }
 
+export async function listImageTasks(): Promise<ImageTask[]> {
+  const res = await fetch(`${API_BASE}/images/tasks`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export async function submitImageTask(req: ImageGenerationRequest): Promise<ImageTask> {
   const res = await fetch(`${API_BASE}/images/tasks`, {
     method: "POST",
