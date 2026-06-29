@@ -341,7 +341,7 @@ export default function GenerateInput({
             </button>
           ) : null}
 
-          {/* Mode label / dropdown */}
+          {/* Mode dropdown */}
           {generateMode === "video" ? (
             <DropdownMenu>
               <DropdownMenuTrigger className="flex items-center gap-1 text-xs text-white/35 hover:text-white/65 transition-colors whitespace-nowrap bg-transparent border-none outline-none cursor-pointer px-1">
@@ -357,7 +357,19 @@ export default function GenerateInput({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <span className="text-xs text-white/35 px-1">{IMAGE_MODE_LABELS[imageInputMode]}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-1 text-xs text-white/35 hover:text-white/65 transition-colors whitespace-nowrap bg-transparent border-none outline-none cursor-pointer px-1">
+                {IMAGE_MODE_LABELS[imageInputMode]}
+                <ChevronDown size={11} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="bg-zinc-900 border-white/10 text-white min-w-40">
+                <DropdownMenuRadioGroup value={imageInputMode} onValueChange={(v) => { setImageInputMode(v as ImageInputMode); setImgSlot1(null); setImgSlot2(null); }}>
+                  {(Object.keys(IMAGE_MODE_LABELS) as ImageInputMode[]).map((m) => (
+                    <DropdownMenuRadioItem key={m} value={m} className="text-sm cursor-pointer">{IMAGE_MODE_LABELS[m]}</DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           <div className="flex-1" />
@@ -365,7 +377,6 @@ export default function GenerateInput({
           {/* Settings */}
           <Settings
             generateMode={generateMode} setGenerateMode={setGenerateMode}
-            imageInputMode={imageInputMode} setImageInputMode={setImageInputMode}
             imageSize={imageSize} setImageSize={setImageSize}
             imageFormat={imageFormat} setImageFormat={setImageFormat}
             ratio={ratio} setRatio={setRatio}

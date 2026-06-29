@@ -15,7 +15,6 @@ interface Props {
   generateAudio: boolean; setGenerateAudio: (v: boolean) => void;
   upscaleResolution: string | null; setUpscaleResolution: (v: string | null) => void;
   // image settings
-  imageInputMode: ImageInputMode; setImageInputMode: (v: ImageInputMode) => void;
   imageSize: string; setImageSize: (v: string) => void;
   imageFormat: string; setImageFormat: (v: string) => void;
   // shared
@@ -29,11 +28,6 @@ const DURATIONS = [4,5,6,7,8,9,10,11,12,13,14,15];
 const UPSCALE_OPTIONS = ["1080p", "4k"];
 const IMAGE_SIZES = ["2048x2048", "2848x1600", "1600x2848", "2304x1728", "1728x2304", "2K", "3K", "4K"];
 const IMAGE_FORMATS = ["jpeg", "png"];
-const IMAGE_INPUT_MODES: { value: ImageInputMode; label: string }[] = [
-  { value: "t2i", label: "Text → Image" },
-  { value: "i2i", label: "Image → Image" },
-  { value: "reblend", label: "Reblend (2 images)" },
-];
 
 function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -65,7 +59,6 @@ export default function Settings({
   ratio, setRatio, resolution, setResolution,
   duration, setDuration, generateAudio, setGenerateAudio,
   upscaleResolution, setUpscaleResolution,
-  imageInputMode, setImageInputMode,
   imageSize, setImageSize,
   imageFormat, setImageFormat,
   seed, setSeed,
@@ -139,17 +132,6 @@ export default function Settings({
             {/* Image-only settings */}
             {generateMode === "image" && (
               <>
-                <div>
-                  <p className="text-xs text-white/35 mb-2">Input mode</p>
-                  <div className="flex flex-col gap-1.5">
-                    {IMAGE_INPUT_MODES.map((m) => (
-                      <Pill key={m.value} active={imageInputMode === m.value} onClick={() => setImageInputMode(m.value)}>
-                        {m.label}
-                      </Pill>
-                    ))}
-                  </div>
-                </div>
-
                 <div>
                   <p className="text-xs text-white/35 mb-2">Size</p>
                   <div className="flex flex-wrap gap-1.5">
