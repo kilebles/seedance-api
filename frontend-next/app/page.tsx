@@ -227,8 +227,37 @@ function ImageTaskCard({ task: initial, onUpdate }: { task: ImageTask; onUpdate:
     <div className="rounded-xl overflow-hidden bg-white/5 border border-white/8 flex flex-col">
       <div className="relative aspect-video bg-zinc-900 flex items-center justify-center">
         {task.status === "succeeded" && task.image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={task.image_url} alt={task.prompt} className="w-full h-full object-cover" />
+          <div className="relative w-full h-full group">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={task.image_url} alt={task.prompt} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+              <a
+                href={task.image_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+                title="Open"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+              <a
+                href={task.image_url}
+                download
+                className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+                title="Download"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </a>
+            </div>
+          </div>
         ) : task.status === "failed" ? (
           <div className="text-center px-4">
             <p className="text-red-400 text-xs font-medium">Failed</p>

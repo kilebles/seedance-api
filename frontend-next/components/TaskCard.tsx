@@ -133,7 +133,36 @@ export default function TaskCard({ task: initial, onUpdate }: Props) {
     <div className="rounded-xl overflow-hidden bg-white/5 border border-white/8 flex flex-col">
       <div className="relative aspect-video bg-zinc-900 flex items-center justify-center">
         {task.status === "succeeded" && videoAlive ? (
-          <VideoThumbnail src={task.video_url!} />
+          <div className="absolute inset-0 group">
+            <VideoThumbnail src={task.video_url!} />
+            <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              <a
+                href={task.video_url!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-8 h-8 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+                title="Open"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-3.5 h-3.5">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+              <a
+                href={task.video_url!}
+                download
+                className="w-8 h-8 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+                title="Download"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-3.5 h-3.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </a>
+            </div>
+          </div>
         ) : task.status === "failed" ? (
           <div className="text-center px-4">
             <p className="text-red-400 text-xs font-medium">Failed</p>
