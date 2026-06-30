@@ -34,6 +34,7 @@ interface Props {
   onSubmitImage: (req: ImageGenerationRequest) => void;
   loading: boolean;
   generateMode: GenerateMode; setGenerateMode: (v: GenerateMode) => void;
+  videoModel: string; setVideoModel: (v: string) => void;
   imageInputMode: ImageInputMode; setImageInputMode: (v: ImageInputMode) => void;
   imageSize: string; setImageSize: (v: string) => void;
   imageFormat: string; setImageFormat: (v: string) => void;
@@ -48,6 +49,7 @@ interface Props {
 export default function GenerateInput({
   onSubmit, onSubmitImage, loading,
   generateMode, setGenerateMode,
+  videoModel, setVideoModel,
   imageInputMode, setImageInputMode,
   imageSize, setImageSize,
   imageFormat, setImageFormat,
@@ -161,6 +163,7 @@ export default function GenerateInput({
     content.push({ type: "text", text: prompt.trim() });
 
     onSubmit({
+      model: videoModel,
       content, ratio, resolution, duration,
       generate_audio: generateAudio,
       ...(seed !== null ? { seed } : {}),
@@ -377,6 +380,7 @@ export default function GenerateInput({
           {/* Settings */}
           <Settings
             generateMode={generateMode} setGenerateMode={setGenerateMode}
+            videoModel={videoModel} setVideoModel={setVideoModel}
             imageSize={imageSize} setImageSize={setImageSize}
             imageFormat={imageFormat} setImageFormat={setImageFormat}
             ratio={ratio} setRatio={setRatio}

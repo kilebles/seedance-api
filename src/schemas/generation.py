@@ -16,16 +16,19 @@ class AspectRatio(str, Enum):
     ratio_4_3 = "4:3"
     ratio_3_4 = "3:4"
     ratio_21_9 = "21:9"
+    adaptive = "adaptive"
 
 
 class Resolution(str, Enum):
     p480 = "480p"
     p720 = "720p"
+    p1080 = "1080p"
+    p4k = "4k"
 
 
 class GenerationRequest(BaseModel):
     model: str = Field(
-        default="dreamina-seedance-2-0-fast-260128",
+        default="dreamina-seedance-2-0-260128",
         description="Seedance model ID",
     )
     content: list[ContentItem] = Field(

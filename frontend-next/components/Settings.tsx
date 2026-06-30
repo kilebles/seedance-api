@@ -6,9 +6,68 @@ import { X } from "lucide-react";
 export type GenerateMode = "video" | "image";
 export type ImageInputMode = "t2i" | "i2i" | "reblend";
 
+export interface VideoModelDef {
+  id: string;
+  label: string;
+  resolutions: string[];
+  ratios: string[];
+  durations: number[];
+  supportsAudio: boolean;
+  supportsSeed: boolean;
+}
+
+export const VIDEO_MODELS: VideoModelDef[] = [
+  {
+    id: "dreamina-seedance-2-0-260128",
+    label: "Seedance 2.0",
+    resolutions: ["480p", "720p", "1080p", "4k"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+    durations: [4,5,6,7,8,9,10,11,12,13,14,15],
+    supportsAudio: true,
+    supportsSeed: false,
+  },
+  {
+    id: "dreamina-seedance-2-0-fast-260128",
+    label: "Seedance 2.0 Fast",
+    resolutions: ["480p", "720p"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+    durations: [4,5,6,7,8,9,10,11,12,13,14,15],
+    supportsAudio: true,
+    supportsSeed: false,
+  },
+  {
+    id: "seedance-1-5-pro-251215",
+    label: "Seedance 1.5 Pro",
+    resolutions: ["480p", "720p", "1080p"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+    durations: [4,5,6,7,8,9,10,11,12],
+    supportsAudio: true,
+    supportsSeed: true,
+  },
+  {
+    id: "seedance-1-0-pro-250528",
+    label: "Seedance 1.0 Pro",
+    resolutions: ["480p", "720p", "1080p"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+    durations: [2,3,4,5,6,7,8,9,10,11,12],
+    supportsAudio: false,
+    supportsSeed: true,
+  },
+  {
+    id: "seedance-1-0-pro-fast-250428",
+    label: "Seedance 1.0 Pro Fast",
+    resolutions: ["480p", "720p", "1080p"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+    durations: [2,3,4,5,6,7,8,9,10,11,12],
+    supportsAudio: false,
+    supportsSeed: true,
+  },
+];
+
 interface Props {
   generateMode: GenerateMode; setGenerateMode: (v: GenerateMode) => void;
   // video settings
+  videoModel: string; setVideoModel: (v: string) => void;
   ratio: string; setRatio: (v: string) => void;
   resolution: string; setResolution: (v: string) => void;
   duration: number; setDuration: (v: number) => void;
@@ -22,9 +81,6 @@ interface Props {
   children: React.ReactNode;
 }
 
-const RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
-const RESOLUTIONS = ["720p", "480p"];
-const DURATIONS = [4,5,6,7,8,9,10,11,12,13,14,15];
 const UPSCALE_OPTIONS = ["1080p", "4k"];
 const IMAGE_SIZES = ["2048x2048", "2848x1600", "1600x2848", "2304x1728", "1728x2304", "2K", "3K", "4K"];
 const IMAGE_FORMATS = ["jpeg", "png"];
@@ -56,6 +112,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 export default function Settings({
   children,
   generateMode, setGenerateMode,
+  videoModel, setVideoModel,
   ratio, setRatio, resolution, setResolution,
   duration, setDuration, generateAudio, setGenerateAudio,
   upscaleResolution, setUpscaleResolution,
@@ -64,6 +121,19 @@ export default function Settings({
   seed, setSeed,
 }: Props) {
   const [open, setOpen] = useState(false);
+
+  const modelDef = VIDEO_MODELS.find((m) => m.id === videoModel) ?? VIDEO_MODELS[0];
+
+  function handleModelChange(id: string) {
+    const def = VIDEO_MODELS.find((m) => m.id === id);
+    if (!def) return;
+    setVideoModel(id);
+    if (!def.resolutions.includes(resolution)) setResolution(def.resolutions[1] ?? def.resolutions[0]);
+    if (!def.ratios.includes(ratio)) setRatio("16:9");
+    if (!def.durations.includes(duration)) setDuration(def.durations[Math.min(4, def.durations.length - 1)]);
+    if (!def.supportsAudio && generateAudio) setGenerateAudio(false);
+    if (!def.supportsSeed && seed !== null) setSeed(null);
+  }
 
   return (
     <>
@@ -90,30 +160,41 @@ export default function Settings({
             {generateMode === "video" && (
               <>
                 <div>
+                  <p className="text-xs text-white/35 mb-2">Model</p>
+                  <div className="flex flex-col gap-1.5">
+                    {VIDEO_MODELS.map((m) => (
+                      <Pill key={m.id} active={videoModel === m.id} onClick={() => handleModelChange(m.id)}>{m.label}</Pill>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <p className="text-xs text-white/35 mb-2">Aspect ratio</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {RATIOS.map((r) => <Pill key={r} active={ratio === r} onClick={() => setRatio(r)}>{r}</Pill>)}
+                    {modelDef.ratios.map((r) => <Pill key={r} active={ratio === r} onClick={() => setRatio(r)}>{r}</Pill>)}
                   </div>
                 </div>
 
                 <div>
                   <p className="text-xs text-white/35 mb-2">Resolution</p>
-                  <div className="flex gap-1.5">
-                    {RESOLUTIONS.map((r) => <Pill key={r} active={resolution === r} onClick={() => setResolution(r)}>{r}</Pill>)}
+                  <div className="flex flex-wrap gap-1.5">
+                    {modelDef.resolutions.map((r) => <Pill key={r} active={resolution === r} onClick={() => setResolution(r)}>{r}</Pill>)}
                   </div>
                 </div>
 
                 <div>
                   <p className="text-xs text-white/35 mb-2">Duration</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {DURATIONS.map((d) => <Pill key={d} active={duration === d} onClick={() => setDuration(d)}>{d}s</Pill>)}
+                    {modelDef.durations.map((d) => <Pill key={d} active={duration === d} onClick={() => setDuration(d)}>{d}s</Pill>)}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-white/55">Generate audio</p>
-                  <Toggle on={generateAudio} onToggle={() => setGenerateAudio(!generateAudio)} />
-                </div>
+                {modelDef.supportsAudio && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-white/55">Generate audio</p>
+                    <Toggle on={generateAudio} onToggle={() => setGenerateAudio(!generateAudio)} />
+                  </div>
+                )}
 
                 <div>
                   <div className="flex items-center justify-between">
@@ -148,20 +229,22 @@ export default function Settings({
               </>
             )}
 
-            {/* Shared: seed */}
-            <div>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-white/55">Fixed seed</p>
-                <Toggle on={seed !== null} onToggle={() => setSeed(seed !== null ? null : 0)} />
+            {/* Shared: seed (only for models that support it, or always for image) */}
+            {(generateMode === "image" || modelDef.supportsSeed) && (
+              <div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-white/55">Fixed seed</p>
+                  <Toggle on={seed !== null} onToggle={() => setSeed(seed !== null ? null : 0)} />
+                </div>
+                {seed !== null && (
+                  <input
+                    type="number" value={seed} min={0} max={4294967295}
+                    onChange={(e) => setSeed(Number(e.target.value))}
+                    className="mt-2 w-full bg-white/5 rounded-xl px-3 py-2 text-sm text-white outline-none"
+                  />
+                )}
               </div>
-              {seed !== null && (
-                <input
-                  type="number" value={seed} min={0} max={4294967295}
-                  onChange={(e) => setSeed(Number(e.target.value))}
-                  className="mt-2 w-full bg-white/5 rounded-xl px-3 py-2 text-sm text-white outline-none"
-                />
-              )}
-            </div>
+            )}
 
             <button
               onClick={() => setOpen(false)}

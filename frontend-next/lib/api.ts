@@ -98,6 +98,7 @@ export interface ContentItem {
 }
 
 export interface GenerationRequest {
+  model?: string;
   content: ContentItem[];
   ratio: string;
   resolution: string;

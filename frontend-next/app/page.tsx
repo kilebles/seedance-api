@@ -67,6 +67,7 @@ export default function Home() {
     return list;
   }, [imageTasks, search, sort, showFailed]);
 
+  const [videoModel, setVideoModel] = useLocalStorage("sd_video_model", "dreamina-seedance-2-0-260128");
   const [ratio, setRatio] = useLocalStorage("sd_ratio", "16:9");
   const [resolution, setResolution] = useLocalStorage("sd_resolution", "720p");
   const [duration, setDuration] = useLocalStorage("sd_duration", 8);
@@ -186,6 +187,7 @@ export default function Home() {
             onSubmitImage={handleSubmitImage}
             loading={loading}
             generateMode={generateMode} setGenerateMode={setGenerateMode}
+            videoModel={videoModel} setVideoModel={setVideoModel}
             imageInputMode={imageInputMode} setImageInputMode={setImageInputMode}
             imageSize={imageSize} setImageSize={setImageSize}
             imageFormat={imageFormat} setImageFormat={setImageFormat}
