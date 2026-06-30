@@ -51,6 +51,7 @@ async def _submit_queued() -> None:
 
     for task in queued:
         request = GenerationRequest(
+            model=task.model,
             content=content_adapter.validate_python(task.content_items or []),
             ratio=AspectRatio(task.ratio_requested),
             resolution=Resolution(task.resolution_requested),
