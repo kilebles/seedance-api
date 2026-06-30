@@ -27,6 +27,15 @@ export const VIDEO_MODELS: VideoModelDef[] = [
     supportsSeed: false,
   },
   {
+    id: "dreamina-seedance-2-0-mini-260615",
+    label: "Seedance 2.0 Mini",
+    resolutions: ["480p", "720p"],
+    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+    durations: [4,5,6,7,8,9,10,11,12,13,14,15],
+    supportsAudio: true,
+    supportsSeed: false,
+  },
+  {
     id: "dreamina-seedance-2-0-fast-260128",
     label: "Seedance 2.0 Fast",
     resolutions: ["480p", "720p"],
@@ -47,15 +56,6 @@ export const VIDEO_MODELS: VideoModelDef[] = [
   {
     id: "seedance-1-0-pro-250528",
     label: "Seedance 1.0 Pro",
-    resolutions: ["480p", "720p", "1080p"],
-    ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-    durations: [2,3,4,5,6,7,8,9,10,11,12],
-    supportsAudio: false,
-    supportsSeed: true,
-  },
-  {
-    id: "seedance-1-0-pro-fast-250428",
-    label: "Seedance 1.0 Pro Fast",
     resolutions: ["480p", "720p", "1080p"],
     ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
     durations: [2,3,4,5,6,7,8,9,10,11,12],
