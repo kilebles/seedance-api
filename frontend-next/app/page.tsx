@@ -18,6 +18,8 @@ function isExpired(t: Task): boolean {
   return Date.now() - new Date(t.updated_at).getTime() >= 23.5 * 60 * 60 * 1000;
 }
 
+type Tab = "video" | "image" | "billing";
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [imageTasks, setImageTasks] = useState<ImageTask[]>([]);
@@ -27,6 +29,7 @@ export default function Home() {
   const [sort, setSort] = useLocalStorage<"newest" | "oldest">("sd_sort", "newest");
   const [showFailed, setShowFailed] = useLocalStorage("sd_show_failed", false);
   const [showExpired, setShowExpired] = useLocalStorage("sd_show_expired", false);
+  const [tab, setTab] = useLocalStorage<Tab>("sd_tab", "video");
 
   const [generateMode, setGenerateMode] = useLocalStorage<GenerateMode>("sd_generate_mode", "video");
   const [imageInputMode, setImageInputMode] = useLocalStorage<ImageInputMode>("sd_image_input_mode", "t2i");
@@ -105,101 +108,268 @@ export default function Home() {
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
   }
 
-  const showImages = generateMode === "image";
-  const displayList = showImages ? filteredImages : filtered;
+  // Sync generateMode with active tab
+  useEffect(() => {
+    if (tab === "video") setGenerateMode("video");
+    else if (tab === "image") setGenerateMode("image");
+  }, [tab]);
+
+  // Billing stats
+  const billingVideo = useMemo(() => {
+    const done = tasks.filter((t) => t.status === "succeeded" && t.total_tokens);
+    const byKey: Record<string, { count: number; total: number; completion: number }> = {};
+    for (const t of done) {
+      const key = `${t.model}|${t.resolution_actual ?? t.resolution_requested}|${t.ratio_actual ?? t.ratio_requested}|${t.duration_actual ?? t.duration_requested ?? "?"}`;
+      if (!byKey[key]) byKey[key] = { count: 0, total: 0, completion: 0 };
+      byKey[key].count++;
+      byKey[key].total += t.total_tokens ?? 0;
+      byKey[key].completion += t.completion_tokens ?? 0;
+    }
+    return { rows: byKey, totalTokens: done.reduce((s, t) => s + (t.total_tokens ?? 0), 0), count: done.length };
+  }, [tasks]);
+
+  const billingImage = useMemo(() => {
+    const done = imageTasks.filter((t) => t.status === "succeeded" && t.total_tokens);
+    const byKey: Record<string, { count: number; total: number; output: number }> = {};
+    for (const t of done) {
+      const key = `${t.model}|${t.image_size ?? t.size_requested ?? "?"}`;
+      if (!byKey[key]) byKey[key] = { count: 0, total: 0, output: 0 };
+      byKey[key].count++;
+      byKey[key].total += t.total_tokens ?? 0;
+      byKey[key].output += t.output_tokens ?? 0;
+    }
+    return { rows: byKey, totalTokens: done.reduce((s, t) => s + (t.total_tokens ?? 0), 0), count: done.length };
+  }, [imageTasks]);
 
   return (
     <div className="h-screen overflow-hidden bg-zinc-950 text-white flex flex-col">
-      {/* Toolbar */}
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <div className="max-w-5xl mx-auto flex items-center gap-3">
-          {/* Search */}
-          <div className="flex-1 flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2">
-            <Search size={15} className="text-white/30 shrink-0" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by prompt..."
-              className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none"
-            />
-          </div>
-
-          {/* Checkboxes */}
-          {(["failed", "expired"] as const).map((key) => {
-            if (key === "expired" && showImages) return null;
-            const checked = key === "failed" ? showFailed : showExpired;
-            const toggle = key === "failed" ? setShowFailed : setShowExpired;
-            return (
-              <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(e) => toggle(e.target.checked)}
-                  className="accent-white w-3.5 h-3.5"
-                />
-                <span className="text-xs text-white/40">{key === "failed" ? "Failed" : "Expired"}</span>
-              </label>
-            );
-          })}
-
-          {/* Sort */}
-          <div className="flex gap-1 bg-white/5 rounded-xl p-1">
-            {(["newest", "oldest"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSort(s)}
-                className={`px-3 py-1 rounded-lg text-xs transition-colors ${
-                  sort === s ? "bg-white/15 text-white" : "text-white/35 hover:text-white/60"
-                }`}
-              >
-                {s === "newest" ? "Newest" : "Oldest"}
-              </button>
-            ))}
-          </div>
+      {/* Top tabs */}
+      <div className="shrink-0 px-6 pt-4 pb-0">
+        <div className="max-w-5xl mx-auto flex gap-1">
+          {(["video", "image", "billing"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-1.5 rounded-t-lg text-sm font-medium transition-colors capitalize ${
+                tab === t
+                  ? "bg-white/8 text-white border-b-2 border-white/30"
+                  : "text-white/35 hover:text-white/60"
+              }`}
+            >
+              {t === "billing" ? "Billing" : t === "video" ? "Video" : "Image"}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Results grid */}
-      <main className="flex-1 overflow-y-auto px-6 py-3">
-        {displayList.length === 0 && !loading && (
-          <div className="h-full min-h-[50vh] flex items-center justify-center">
-            <p className="text-white/15 text-base">
-              {search ? "No results" : showImages ? "Generate your first image below" : "Generate your first video below"}
-            </p>
+      {/* Toolbar — hidden on billing */}
+      {tab !== "billing" && (
+        <div className="shrink-0 px-6 pt-3 pb-3">
+          <div className="max-w-5xl mx-auto flex items-center gap-3">
+            <div className="flex-1 flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2">
+              <Search size={15} className="text-white/30 shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by prompt..."
+                className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none"
+              />
+            </div>
+
+            {(["failed", "expired"] as const).map((key) => {
+              if (key === "expired" && tab === "image") return null;
+              const checked = key === "failed" ? showFailed : showExpired;
+              const toggle = key === "failed" ? setShowFailed : setShowExpired;
+              return (
+                <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => toggle(e.target.checked)}
+                    className="accent-white w-3.5 h-3.5"
+                  />
+                  <span className="text-xs text-white/40">{key === "failed" ? "Failed" : "Expired"}</span>
+                </label>
+              );
+            })}
+
+            <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+              {(["newest", "oldest"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSort(s)}
+                  className={`px-3 py-1 rounded-lg text-xs transition-colors ${
+                    sort === s ? "bg-white/15 text-white" : "text-white/35 hover:text-white/60"
+                  }`}
+                >
+                  {s === "newest" ? "Newest" : "Oldest"}
+                </button>
+              ))}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Results */}
+      <main className="flex-1 overflow-y-auto px-6 py-3">
+        {/* Video tab */}
+        {tab === "video" && (
+          <>
+            {filtered.length === 0 ? (
+              <div className="h-full min-h-[50vh] flex items-center justify-center">
+                <p className="text-white/15 text-base">{search ? "No results" : "Generate your first video below"}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
+                {filtered.map((t) => <TaskCard key={t.id} task={t} onUpdate={handleUpdate} />)}
+              </div>
+            )}
+          </>
         )}
-        {displayList.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
-            {showImages
-              ? filteredImages.map((t) => <ImageTaskCard key={t.id} task={t} onUpdate={(u) => setImageTasks((prev) => prev.map((x) => x.id === u.id ? u : x))} />)
-              : filtered.map((t) => <TaskCard key={t.id} task={t} onUpdate={handleUpdate} />)
-            }
+
+        {/* Image tab */}
+        {tab === "image" && (
+          <>
+            {filteredImages.length === 0 ? (
+              <div className="h-full min-h-[50vh] flex items-center justify-center">
+                <p className="text-white/15 text-base">{search ? "No results" : "Generate your first image below"}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
+                {filteredImages.map((t) => <ImageTaskCard key={t.id} task={t} onUpdate={(u) => setImageTasks((prev) => prev.map((x) => x.id === u.id ? u : x))} />)}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Billing tab */}
+        {tab === "billing" && (
+          <div className="max-w-3xl mx-auto space-y-8 py-2">
+            {/* Video billing */}
+            <section>
+              <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-3">Video</h2>
+              {billingVideo.count === 0 ? (
+                <p className="text-white/20 text-sm">No data yet</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <Stat label="Completed" value={String(billingVideo.count)} />
+                    <Stat label="Total tokens" value={billingVideo.totalTokens.toLocaleString()} />
+                    <Stat label="Avg / task" value={Math.round(billingVideo.totalTokens / billingVideo.count).toLocaleString()} />
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-white/30 text-xs border-b border-white/8">
+                        <th className="text-left pb-2 font-normal">Model</th>
+                        <th className="text-left pb-2 font-normal">Resolution</th>
+                        <th className="text-left pb-2 font-normal">Ratio</th>
+                        <th className="text-left pb-2 font-normal">Duration</th>
+                        <th className="text-right pb-2 font-normal">Tasks</th>
+                        <th className="text-right pb-2 font-normal">Total tokens</th>
+                        <th className="text-right pb-2 font-normal">Avg tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(billingVideo.rows).map(([key, v]) => {
+                        const [model, res, ratio, dur] = key.split("|");
+                        const modelShort = model.replace("dreamina-", "").replace("-260128", "").replace("-260615", "").replace("-251215", "").replace("-250528", "");
+                        return (
+                          <tr key={key} className="border-b border-white/5 text-white/70">
+                            <td className="py-2 pr-3">{modelShort}</td>
+                            <td className="py-2 pr-3">{res}</td>
+                            <td className="py-2 pr-3">{ratio}</td>
+                            <td className="py-2 pr-3">{dur}s</td>
+                            <td className="py-2 text-right">{v.count}</td>
+                            <td className="py-2 text-right">{v.total.toLocaleString()}</td>
+                            <td className="py-2 text-right">{Math.round(v.total / v.count).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </section>
+
+            {/* Image billing */}
+            <section>
+              <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-3">Image</h2>
+              {billingImage.count === 0 ? (
+                <p className="text-white/20 text-sm">No data yet</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <Stat label="Completed" value={String(billingImage.count)} />
+                    <Stat label="Total tokens" value={billingImage.totalTokens.toLocaleString()} />
+                    <Stat label="Avg / task" value={Math.round(billingImage.totalTokens / billingImage.count).toLocaleString()} />
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-white/30 text-xs border-b border-white/8">
+                        <th className="text-left pb-2 font-normal">Model</th>
+                        <th className="text-left pb-2 font-normal">Size</th>
+                        <th className="text-right pb-2 font-normal">Tasks</th>
+                        <th className="text-right pb-2 font-normal">Total tokens</th>
+                        <th className="text-right pb-2 font-normal">Output tokens</th>
+                        <th className="text-right pb-2 font-normal">Avg tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(billingImage.rows).map(([key, v]) => {
+                        const [model, size] = key.split("|");
+                        return (
+                          <tr key={key} className="border-b border-white/5 text-white/70">
+                            <td className="py-2 pr-3">{model}</td>
+                            <td className="py-2 pr-3">{size}</td>
+                            <td className="py-2 text-right">{v.count}</td>
+                            <td className="py-2 text-right">{v.total.toLocaleString()}</td>
+                            <td className="py-2 text-right">{v.output.toLocaleString()}</td>
+                            <td className="py-2 text-right">{Math.round(v.total / v.count).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </section>
           </div>
         )}
       </main>
 
-      {/* Bottom input */}
-      <div className="shrink-0 px-6 pb-6 pt-3">
-        {error && <p className="text-red-400 text-sm mb-2 text-center">{error}</p>}
-        <div className="max-w-5xl mx-auto">
-          <GenerateInput
-            onSubmit={handleSubmit}
-            onSubmitImage={handleSubmitImage}
-            loading={loading}
-            generateMode={generateMode} setGenerateMode={setGenerateMode}
-            videoModel={videoModel} setVideoModel={setVideoModel}
-            imageInputMode={imageInputMode} setImageInputMode={setImageInputMode}
-            imageSize={imageSize} setImageSize={setImageSize}
-            imageFormat={imageFormat} setImageFormat={setImageFormat}
-            ratio={ratio} setRatio={setRatio}
-            resolution={resolution} setResolution={setResolution}
-            duration={duration} setDuration={setDuration}
-            generateAudio={generateAudio} setGenerateAudio={setGenerateAudio}
-            seed={seed} setSeed={setSeed}
-            upscaleResolution={upscaleResolution} setUpscaleResolution={setUpscaleResolution}
-          />
+      {/* Bottom input — hidden on billing */}
+      {tab !== "billing" && (
+        <div className="shrink-0 px-6 pb-6 pt-3">
+          {error && <p className="text-red-400 text-sm mb-2 text-center">{error}</p>}
+          <div className="max-w-5xl mx-auto">
+            <GenerateInput
+              onSubmit={handleSubmit}
+              onSubmitImage={handleSubmitImage}
+              loading={loading}
+              generateMode={generateMode} setGenerateMode={setGenerateMode}
+              videoModel={videoModel} setVideoModel={setVideoModel}
+              imageInputMode={imageInputMode} setImageInputMode={setImageInputMode}
+              imageSize={imageSize} setImageSize={setImageSize}
+              imageFormat={imageFormat} setImageFormat={setImageFormat}
+              ratio={ratio} setRatio={setRatio}
+              resolution={resolution} setResolution={setResolution}
+              duration={duration} setDuration={setDuration}
+              generateAudio={generateAudio} setGenerateAudio={setGenerateAudio}
+              seed={seed} setSeed={setSeed}
+              upscaleResolution={upscaleResolution} setUpscaleResolution={setUpscaleResolution}
+            />
+          </div>
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white/5 rounded-xl px-4 py-3">
+      <p className="text-white/35 text-xs mb-1">{label}</p>
+      <p className="text-white text-lg font-medium">{value}</p>
     </div>
   );
 }
@@ -233,30 +403,11 @@ function ImageTaskCard({ task: initial, onUpdate }: { task: ImageTask; onUpdate:
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={task.image_url} alt={task.prompt} className="w-full h-full object-cover" />
             <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-              <a
-                href={task.image_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
-                title="Open"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
+              <a href={task.image_url} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors" title="Open">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
               </a>
-              <a
-                href={task.image_url}
-                download
-                className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
-                title="Download"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
+              <a href={task.image_url} download className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors" title="Download">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" className="w-4 h-4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
               </a>
             </div>
           </div>

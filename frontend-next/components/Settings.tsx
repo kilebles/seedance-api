@@ -147,15 +147,6 @@ export default function Settings({
               <button onClick={() => setOpen(false)} className="text-white/35 hover:text-white"><X size={16} /></button>
             </div>
 
-            {/* Mode switch */}
-            <div>
-              <p className="text-xs text-white/35 mb-2">Mode</p>
-              <div className="flex gap-1.5">
-                <Pill active={generateMode === "video"} onClick={() => setGenerateMode("video")}>Video</Pill>
-                <Pill active={generateMode === "image"} onClick={() => setGenerateMode("image")}>Image</Pill>
-              </div>
-            </div>
-
             {/* Video-only settings */}
             {generateMode === "video" && (
               <>
