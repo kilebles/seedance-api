@@ -181,6 +181,12 @@ def _list_tasks() -> list[dict]:
     return resp.json()
 
 
+def _list_image_tasks() -> list[dict]:
+    resp = httpx.get(f"{API_BASE}/images/tasks", timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _cancel_task(task_id: str) -> None:
     resp = httpx.delete(f"{API_BASE}/generations/tasks/{task_id}", timeout=10)
     resp.raise_for_status()
@@ -197,65 +203,18 @@ def _cancel_tasks_bulk(task_ids: list[str]) -> dict:
 st.set_page_config(page_title="HistoryDoc SeeDance", layout="wide")
 st.title("HistoryDoc SeeDance")
 
-tab_generate, tab_batch, tab_history, tab_yadisk = st.tabs(["Generate", "Batch", "History", "Yandex Disk"])
+tab_generate, tab_batch, tab_video, tab_image, tab_billing, tab_history, tab_yadisk = st.tabs(
+    ["Generate", "Batch", "Video", "Image", "Billing", "History", "Yandex Disk"]
+)
 
 # ── Generate tab ──────────────────────────────────────────────────────────────
 with tab_generate:
-    gen_mode = st.radio("Mode", ["Video", "Image"], horizontal=True, key="gen_mode")
+    col_gen_video, col_gen_image = st.columns(2)
 
-    # ── Image generation ──────────────────────────────────────────────────────
-    if gen_mode == "Image":
-        IMAGE_SIZES = ["2048x2048", "2848x1600", "1600x2848", "2304x1728", "1728x2304", "2K", "3K", "4K"]
+    # ── Video generation ───────────────────────────────────────────────────────
+    with col_gen_video:
+        st.markdown("### Video")
 
-        if "image_tasks" not in st.session_state:
-            st.session_state["image_tasks"] = []
-
-        with st.form("image_form"):
-            img_prompt = st.text_area("Prompt", height=100, placeholder="Опишите изображение...")
-            img_uploaded = st.file_uploader(
-                "Референс (необязательно)",
-                type=["jpg", "jpeg", "png", "webp"],
-                key="img_ref",
-            )
-            img_size = st.selectbox("Size", IMAGE_SIZES, index=0)
-            img_submitted = st.form_submit_button("Generate image", type="primary")
-
-        if img_submitted:
-            if not img_prompt.strip():
-                st.error("Prompt is required.")
-            else:
-                img_bytes = img_uploaded.read() if img_uploaded else None
-                img_mime = img_uploaded.type if img_uploaded else None
-                with st.spinner("Generating image..."):
-                    try:
-                        result = _submit_image(img_prompt.strip(), img_bytes, img_mime, img_size)
-                    except Exception as e:
-                        st.error(f"Failed: {e}")
-                        result = None
-                if result:
-                    st.session_state["image_tasks"].insert(0, result)
-                    if result.get("status") == "succeeded":
-                        st.rerun()
-                    else:
-                        st.error(f"Failed: {result.get('error_message') or result.get('error_code') or 'unknown'}")
-
-        img_tasks = st.session_state.get("image_tasks", [])
-        if img_tasks:
-            st.divider()
-            st.caption(f"Сгенерировано в этой сессии: {len(img_tasks)}")
-            cols = st.columns(3)
-            for i, t in enumerate(img_tasks):
-                with cols[i % 3]:
-                    if t.get("image_url"):
-                        st.image(t["image_url"], use_container_width=True)
-                    elif t.get("status") == "failed":
-                        st.error(t.get("error_message") or t.get("error_code") or "failed")
-                    prompt_short = (t["prompt"][:80] + "…") if len(t.get("prompt", "")) > 80 else t.get("prompt", "")
-                    meta = f"`{t.get('image_size') or t.get('size_requested') or ''}`"
-                    st.caption(f"{meta}  \n{prompt_short}")
-
-    # ── Video generation ──────────────────────────────────────────────────────
-    else:
         if "generate_tasks" not in st.session_state:
             st.session_state["generate_tasks"] = []
 
@@ -301,7 +260,7 @@ with tab_generate:
                     disabled=not fixed_seed, label_visibility="collapsed",
                 )
 
-            submitted = st.form_submit_button("Generate", type="primary")
+            submitted = st.form_submit_button("Generate video", type="primary")
 
         if submitted:
             if not prompt.strip():
@@ -372,8 +331,7 @@ with tab_generate:
         if gen_tasks:
             st.divider()
             st.caption(f"Сгенерировано в этой сессии: {len(gen_tasks)}")
-            cols = st.columns(3)
-            for i, entry in enumerate(gen_tasks):
+            for entry in gen_tasks:
                 tid = entry["id"]
                 try:
                     t = _get_task(tid)
@@ -388,33 +346,281 @@ with tab_generate:
                 upscale_val = entry.get("upscale_resolution")
                 duration_val = t.get("duration_actual")
 
-                with cols[i % 3]:
-                    if cur_status == "succeeded":
-                        if video_url:
-                            if last_frame:
-                                with st.expander("▶ Смотреть видео", expanded=False):
-                                    st.video(video_url)
-                                st.image(last_frame, use_container_width=True)
-                            else:
+                if cur_status == "succeeded":
+                    if video_url:
+                        if last_frame:
+                            with st.expander("▶ Смотреть видео", expanded=False):
                                 st.video(video_url)
-                        elif last_frame:
                             st.image(last_frame, use_container_width=True)
                         else:
-                            st.info("URL истёк")
-                    elif cur_status in ("queued", "running"):
-                        st.markdown(f"⚙️ **{cur_status}**")
-                    elif cur_status == "failed":
-                        st.error(f"failed: {t.get('error_message') or t.get('error_code') or ''}")
+                            st.video(video_url)
+                    elif last_frame:
+                        st.image(last_frame, use_container_width=True)
                     else:
-                        st.caption(cur_status)
+                        st.info("URL истёк")
+                elif cur_status in ("queued", "running"):
+                    st.markdown(f"⚙️ **{cur_status}**")
+                elif cur_status == "failed":
+                    st.error(f"failed: {t.get('error_message') or t.get('error_code') or ''}")
+                else:
+                    st.caption(cur_status)
 
-                    prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
-                    meta = f"`{res} {ratio_val}`"
-                    if duration_val:
-                        meta += f" `{duration_val}s`"
-                    if upscale_val:
-                        meta += f" `→{upscale_val}`"
-                    st.caption(f"{meta}  \n{prompt_short}")
+                prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
+                meta = f"`{res} {ratio_val}`"
+                if duration_val:
+                    meta += f" `{duration_val}s`"
+                if upscale_val:
+                    meta += f" `→{upscale_val}`"
+                st.caption(f"{meta}  \n{prompt_short}")
+
+    # ── Image generation ───────────────────────────────────────────────────────
+    with col_gen_image:
+        st.markdown("### Image")
+
+        IMAGE_SIZES = ["2048x2048", "2848x1600", "1600x2848", "2304x1728", "1728x2304", "2K", "3K", "4K"]
+
+        if "image_tasks" not in st.session_state:
+            st.session_state["image_tasks"] = []
+
+        with st.form("image_form"):
+            img_prompt = st.text_area("Prompt", height=100, placeholder="Опишите изображение...")
+            img_uploaded = st.file_uploader(
+                "Референс (необязательно)",
+                type=["jpg", "jpeg", "png", "webp"],
+                key="img_ref",
+            )
+            img_size = st.selectbox("Size", IMAGE_SIZES, index=0)
+            img_submitted = st.form_submit_button("Generate image", type="primary")
+
+        if img_submitted:
+            if not img_prompt.strip():
+                st.error("Prompt is required.")
+            else:
+                img_bytes = img_uploaded.read() if img_uploaded else None
+                img_mime = img_uploaded.type if img_uploaded else None
+                with st.spinner("Generating image..."):
+                    try:
+                        result = _submit_image(img_prompt.strip(), img_bytes, img_mime, img_size)
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
+                        result = None
+                if result:
+                    st.session_state["image_tasks"].insert(0, result)
+                    if result.get("status") == "succeeded":
+                        st.rerun()
+                    else:
+                        st.error(f"Failed: {result.get('error_message') or result.get('error_code') or 'unknown'}")
+
+        img_tasks = st.session_state.get("image_tasks", [])
+        if img_tasks:
+            st.divider()
+            st.caption(f"Сгенерировано в этой сессии: {len(img_tasks)}")
+            for t in img_tasks:
+                if t.get("image_url"):
+                    st.image(t["image_url"], use_container_width=True)
+                elif t.get("status") == "failed":
+                    st.error(t.get("error_message") or t.get("error_code") or "failed")
+                prompt_short = (t["prompt"][:80] + "…") if len(t.get("prompt", "")) > 80 else t.get("prompt", "")
+                meta = f"`{t.get('image_size') or t.get('size_requested') or ''}`"
+                st.caption(f"{meta}  \n{prompt_short}")
+
+# ── Video tab ─────────────────────────────────────────────────────────────────
+with tab_video:
+    col_vrefresh, _ = st.columns([1, 8])
+    with col_vrefresh:
+        if st.button("Refresh", key="video_refresh"):
+            st.rerun()
+
+    try:
+        all_video_tasks = _list_tasks()
+    except Exception as e:
+        st.error(f"Failed to load tasks: {e}")
+        all_video_tasks = []
+
+    succeeded_videos = [t for t in all_video_tasks if t.get("status") == "succeeded"]
+
+    if not succeeded_videos:
+        st.info("No completed videos yet.")
+    else:
+        st.caption(f"Всего: {len(succeeded_videos)}")
+        cols = st.columns(3)
+        for i, t in enumerate(succeeded_videos):
+            items = t.get("content_items") or []
+            prompt_text = next((it["text"] for it in items if it.get("type") == "text"), "")
+            res = t.get("resolution_actual") or t.get("resolution_requested") or ""
+            ratio_val = t.get("ratio_actual") or t.get("ratio_requested") or ""
+            duration_val = t.get("duration_actual")
+            model_val = t.get("model") or ""
+            upscale_val = t.get("upscale_resolution")
+
+            with cols[i % 3]:
+                video_url = t.get("video_url")
+                last_frame = t.get("last_frame_url")
+                if video_url:
+                    if last_frame:
+                        with st.expander("▶ Смотреть", expanded=False):
+                            st.video(video_url)
+                        st.image(last_frame, use_container_width=True)
+                    else:
+                        st.video(video_url)
+                elif last_frame:
+                    st.image(last_frame, use_container_width=True)
+                else:
+                    st.warning("URL expired")
+
+                prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
+                meta_parts = [f"`{res}`", f"`{ratio_val}`"]
+                if duration_val:
+                    meta_parts.append(f"`{duration_val}s`")
+                if upscale_val:
+                    meta_parts.append(f"`→{upscale_val}`")
+                if model_val:
+                    meta_parts.append(f"`{model_val.split('-')[1] if '-' in model_val else model_val}`")
+                st.caption("  ".join(meta_parts) + f"  \n{prompt_short}")
+
+
+# ── Image tab ─────────────────────────────────────────────────────────────────
+with tab_image:
+    col_irefresh, _ = st.columns([1, 8])
+    with col_irefresh:
+        if st.button("Refresh", key="image_tab_refresh"):
+            st.rerun()
+
+    try:
+        all_image_tasks = _list_image_tasks()
+    except Exception as e:
+        st.error(f"Failed to load image tasks: {e}")
+        all_image_tasks = []
+
+    succeeded_images = [t for t in all_image_tasks if t.get("status") == "succeeded"]
+
+    if not succeeded_images:
+        st.info("No completed images yet.")
+    else:
+        st.caption(f"Всего: {len(succeeded_images)}")
+        cols = st.columns(3)
+        for i, t in enumerate(succeeded_images):
+            prompt_text = t.get("prompt") or ""
+            size_val = t.get("image_size") or t.get("size_requested") or ""
+            model_val = t.get("model") or ""
+
+            with cols[i % 3]:
+                if t.get("image_url"):
+                    st.image(t["image_url"], use_container_width=True)
+                else:
+                    st.warning("URL expired")
+
+                prompt_short = (prompt_text[:80] + "…") if len(prompt_text) > 80 else prompt_text
+                meta_parts = []
+                if size_val:
+                    meta_parts.append(f"`{size_val}`")
+                if model_val:
+                    meta_parts.append(f"`{model_val}`")
+                st.caption("  ".join(meta_parts) + f"  \n{prompt_short}")
+
+
+# ── Billing tab ────────────────────────────────────────────────────────────────
+with tab_billing:
+    col_brefresh, _ = st.columns([1, 8])
+    with col_brefresh:
+        if st.button("Refresh", key="billing_refresh"):
+            st.rerun()
+
+    try:
+        billing_video_tasks = _list_tasks()
+    except Exception as e:
+        st.error(f"Failed to load video tasks: {e}")
+        billing_video_tasks = []
+
+    try:
+        billing_image_tasks = _list_image_tasks()
+    except Exception as e:
+        st.error(f"Failed to load image tasks: {e}")
+        billing_image_tasks = []
+
+    # ── Video billing ──────────────────────────────────────────────────────────
+    st.subheader("Video generation")
+
+    video_done = [t for t in billing_video_tasks if t.get("status") == "succeeded" and t.get("total_tokens")]
+    if not video_done:
+        st.info("No completed video tasks with token data.")
+    else:
+        from collections import defaultdict
+
+        # Aggregate by (model, resolution, ratio, duration)
+        agg: dict[tuple, dict] = defaultdict(lambda: {"count": 0, "total_tokens": 0, "completion_tokens": 0})
+        for t in video_done:
+            key = (
+                t.get("model") or "unknown",
+                t.get("resolution_actual") or t.get("resolution_requested") or "?",
+                t.get("ratio_actual") or t.get("ratio_requested") or "?",
+                t.get("duration_actual") or t.get("duration_requested") or "?",
+            )
+            agg[key]["count"] += 1
+            agg[key]["total_tokens"] += t.get("total_tokens") or 0
+            agg[key]["completion_tokens"] += t.get("completion_tokens") or 0
+
+        rows = []
+        for (model, res, ratio, dur), v in sorted(agg.items()):
+            rows.append({
+                "Model": model,
+                "Resolution": res,
+                "Ratio": ratio,
+                "Duration (s)": dur,
+                "Tasks": v["count"],
+                "Total tokens": v["total_tokens"],
+                "Completion tokens": v["completion_tokens"],
+                "Avg tokens/task": round(v["total_tokens"] / v["count"]) if v["count"] else 0,
+            })
+
+        st.dataframe(rows, use_container_width=True)
+
+        total_vid_tokens = sum(t.get("total_tokens") or 0 for t in video_done)
+        total_vid_tasks = len(video_done)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Completed tasks", total_vid_tasks)
+        col2.metric("Total tokens", f"{total_vid_tokens:,}")
+        col3.metric("Avg tokens/task", f"{round(total_vid_tokens / total_vid_tasks):,}" if total_vid_tasks else "—")
+
+    st.divider()
+
+    # ── Image billing ──────────────────────────────────────────────────────────
+    st.subheader("Image generation")
+
+    image_done = [t for t in billing_image_tasks if t.get("status") == "succeeded" and t.get("total_tokens")]
+    if not image_done:
+        st.info("No completed image tasks with token data.")
+    else:
+        agg_img: dict[tuple, dict] = defaultdict(lambda: {"count": 0, "total_tokens": 0, "output_tokens": 0})
+        for t in image_done:
+            key = (
+                t.get("model") or "unknown",
+                t.get("image_size") or t.get("size_requested") or "?",
+            )
+            agg_img[key]["count"] += 1
+            agg_img[key]["total_tokens"] += t.get("total_tokens") or 0
+            agg_img[key]["output_tokens"] += t.get("output_tokens") or 0
+
+        rows_img = []
+        for (model, size), v in sorted(agg_img.items()):
+            rows_img.append({
+                "Model": model,
+                "Size": size,
+                "Tasks": v["count"],
+                "Total tokens": v["total_tokens"],
+                "Output tokens": v["output_tokens"],
+                "Avg tokens/task": round(v["total_tokens"] / v["count"]) if v["count"] else 0,
+            })
+
+        st.dataframe(rows_img, use_container_width=True)
+
+        total_img_tokens = sum(t.get("total_tokens") or 0 for t in image_done)
+        total_img_tasks = len(image_done)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Completed tasks", total_img_tasks)
+        col2.metric("Total tokens", f"{total_img_tokens:,}")
+        col3.metric("Avg tokens/task", f"{round(total_img_tokens / total_img_tasks):,}" if total_img_tasks else "—")
+
 
 # ── Batch tab ─────────────────────────────────────────────────────────────────
 with tab_batch:
