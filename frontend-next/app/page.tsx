@@ -114,6 +114,23 @@ export default function Home() {
     else if (tab === "image") setGenerateMode("image");
   }, [tab]);
 
+  // Real-time refresh every 30s
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Today summary
+  const todayStats = useMemo(() => {
+    const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD UTC
+    const videos = tasks.filter((t) => t.status === "succeeded" && t.created_at.startsWith(todayStr));
+    const images = imageTasks.filter((t) => t.status === "succeeded" && t.created_at.startsWith(todayStr));
+    const videoTokens = videos.reduce((s, t) => s + (t.total_tokens ?? 0), 0);
+    const imageTokens = images.reduce((s, t) => s + (t.total_tokens ?? 0), 0);
+    return { videos: videos.length, images: images.length, videoTokens, imageTokens, total: videos.length + images.length, totalTokens: videoTokens + imageTokens };
+  }, [tasks, imageTasks, now]);
+
   // Billing stats
   const billingVideo = useMemo(() => {
     const done = tasks.filter((t) => t.status === "succeeded" && t.total_tokens);
@@ -245,6 +262,25 @@ export default function Home() {
         {/* Billing tab */}
         {tab === "billing" && (
           <div className="max-w-3xl mx-auto space-y-8 py-2">
+            {/* Today summary */}
+            <section>
+              <div className="flex items-baseline gap-2 mb-3">
+                <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider">Today</h2>
+                <span className="text-white/20 text-xs">{now.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Stat label="Videos" value={String(todayStats.videos)} />
+                <Stat label="Images" value={String(todayStats.images)} />
+                <Stat label="Video tokens" value={todayStats.videoTokens.toLocaleString()} />
+                <Stat label="Image tokens" value={todayStats.imageTokens.toLocaleString()} />
+              </div>
+              {todayStats.total === 0 && (
+                <p className="text-white/20 text-xs mt-2">Nothing generated today yet</p>
+              )}
+            </section>
+
+            <div className="border-t border-white/6" />
+
             {/* Video billing */}
             <section>
               <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-3">Video</h2>
