@@ -429,8 +429,8 @@ function DailyChart({ days }: { days: { label: string; tokens: number; videos: n
   const [hovered, setHovered] = useState<number | null>(null);
   const maxTokens = Math.max(...days.map((d) => d.tokens), 1);
   const H = 80;
-  const barW = 16;
-  const gap = 8;
+  const barW = 14;
+  const gap = 6;
   const totalW = days.length * (barW + gap) - gap;
 
   return (
@@ -452,9 +452,9 @@ function DailyChart({ days }: { days: { label: string; tokens: number; videos: n
               {d.tokens === 0 && (
                 <rect x={x} y={H - 2} width={barW} height={2} rx={1} fill="rgba(255,255,255,0.06)" />
               )}
-              {/* x label */}
-              <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={8} fill={isToday ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)"}>
-                {isToday ? "Today" : d.label.split(" ")[0]}
+              {/* x label — show day number only */}
+              <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={8} fill={isToday ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.18)"}>
+                {d.label === "Today" ? "·" : d.label === "Yesterday" ? "·" : d.label.split(" ")[0]}
               </text>
             </g>
           );
