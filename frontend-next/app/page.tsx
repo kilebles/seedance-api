@@ -131,6 +131,22 @@ export default function Home() {
     return { videos: videos.length, images: images.length, videoTokens, imageTokens, total: videos.length + images.length, totalTokens: videoTokens + imageTokens };
   }, [tasks, imageTasks, now]);
 
+  // Daily stats for chart (last 14 days)
+  const dailyStats = useMemo(() => {
+    const days: { date: string; label: string; tokens: number; videos: number; images: number }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const dayVideos = tasks.filter((t) => t.status === "succeeded" && t.created_at.startsWith(dateStr));
+      const dayImages = imageTasks.filter((t) => t.status === "succeeded" && t.created_at.startsWith(dateStr));
+      const tokens = dayVideos.reduce((s, t) => s + (t.total_tokens ?? 0), 0) + dayImages.reduce((s, t) => s + (t.total_tokens ?? 0), 0);
+      const label = i === 0 ? "Today" : i === 1 ? "Yesterday" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      days.push({ date: dateStr, label, tokens, videos: dayVideos.length, images: dayImages.length });
+    }
+    return days;
+  }, [tasks, imageTasks, now]);
+
   // Billing stats
   const billingVideo = useMemo(() => {
     const done = tasks.filter((t) => t.status === "succeeded" && t.total_tokens);
@@ -281,6 +297,14 @@ export default function Home() {
 
             <div className="border-t border-white/6" />
 
+            {/* Daily chart */}
+            <section>
+              <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-4">Last 14 days</h2>
+              <DailyChart days={dailyStats} />
+            </section>
+
+            <div className="border-t border-white/6" />
+
             {/* Video billing */}
             <section>
               <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-3">Video</h2>
@@ -397,6 +421,57 @@ export default function Home() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DailyChart({ days }: { days: { label: string; tokens: number; videos: number; images: number }[] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const maxTokens = Math.max(...days.map((d) => d.tokens), 1);
+  const H = 80;
+  const barW = 16;
+  const gap = 8;
+  const totalW = days.length * (barW + gap) - gap;
+
+  return (
+    <div className="space-y-2">
+      <svg width="100%" viewBox={`0 0 ${totalW} ${H + 24}`} className="overflow-visible">
+        {days.map((d, i) => {
+          const x = i * (barW + gap);
+          const barH = d.tokens > 0 ? Math.max(3, Math.round((d.tokens / maxTokens) * H)) : 2;
+          const y = H - barH;
+          const isHov = hovered === i;
+          const isToday = d.label === "Today";
+          return (
+            <g key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>
+              <rect x={x} y={y} width={barW} height={barH} rx={3}
+                fill={isToday ? "rgba(255,255,255,0.7)" : isHov ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.12)"}
+                className="transition-colors duration-150 cursor-default"
+              />
+              {/* empty bar bg */}
+              {d.tokens === 0 && (
+                <rect x={x} y={H - 2} width={barW} height={2} rx={1} fill="rgba(255,255,255,0.06)" />
+              )}
+              {/* x label */}
+              <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={8} fill={isToday ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)"}>
+                {isToday ? "Today" : d.label.split(" ")[0]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Tooltip */}
+      <div className="h-10">
+        {hovered !== null && (
+          <div className="flex items-center gap-4 text-xs text-white/50">
+            <span className="text-white/70 font-medium">{days[hovered].label}</span>
+            <span>{days[hovered].tokens.toLocaleString()} tokens</span>
+            <span>{days[hovered].videos} videos</span>
+            <span>{days[hovered].images} images</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
