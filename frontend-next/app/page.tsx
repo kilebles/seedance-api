@@ -141,7 +141,7 @@ export default function Home() {
       const dayVideos = tasks.filter((t) => t.status === "succeeded" && t.created_at.startsWith(dateStr));
       const dayImages = imageTasks.filter((t) => t.status === "succeeded" && t.created_at.startsWith(dateStr));
       const tokens = dayVideos.reduce((s, t) => s + (t.total_tokens ?? 0), 0) + dayImages.reduce((s, t) => s + (t.total_tokens ?? 0), 0);
-      const label = i === 0 ? "Today" : i === 1 ? "Yesterday" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      const label = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
       days.push({ date: dateStr, label, tokens, videos: dayVideos.length, images: dayImages.length });
     }
     return days;
@@ -452,9 +452,9 @@ function DailyChart({ days }: { days: { label: string; tokens: number; videos: n
               {d.tokens === 0 && (
                 <rect x={x} y={H - 2} width={barW} height={2} rx={1} fill="rgba(255,255,255,0.06)" />
               )}
-              {/* x label — show day number only */}
+              {/* x label — day number only */}
               <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={8} fill={isToday ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.18)"}>
-                {d.label === "Today" ? "·" : d.label === "Yesterday" ? "·" : d.label.split(" ")[0]}
+                {d.label.split(" ")[0]}
               </text>
             </g>
           );
