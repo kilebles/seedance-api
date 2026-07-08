@@ -11,6 +11,8 @@ import time
 import zipfile
 from pathlib import Path
 
+from collections import defaultdict
+
 import httpx
 import streamlit as st
 
@@ -636,8 +638,6 @@ with tab_billing:
     if not video_done:
         st.info("No completed video tasks with token data.")
     else:
-        from collections import defaultdict
-
         # Aggregate by (model, resolution, ratio, duration)
         agg: dict[tuple, dict] = defaultdict(lambda: {"count": 0, "total_tokens": 0, "completion_tokens": 0})
         for t in video_done:
