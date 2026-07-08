@@ -34,6 +34,7 @@ async def _get_admin_user_id(db: AsyncSession) -> uuid.UUID:
 )
 async def create_batch(
     file: UploadFile = File(..., description="xlsx with columns: number, prompt"),
+    model: str = Form(default="dreamina-seedance-2-0-fast-260128"),
     ratio: AspectRatio = Form(default=AspectRatio.ratio_16_9),
     resolution: Resolution = Form(default=Resolution.p720),
     duration: int = Form(default=8, ge=4, le=15),
@@ -94,6 +95,7 @@ async def create_batch(
         content_items: list[ContentItem] = [TextContent(type="text", text=prompt)]
 
         request = GenerationRequest(
+            model=model,
             content=content_items,
             ratio=ratio,
             resolution=resolution,
