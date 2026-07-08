@@ -161,6 +161,7 @@ async def _queue_enhance_for_task(
     fps: int = 24,
     duration: int = 8,
     resolution: str | None = None,
+    output_resolution: str | None = None,
 ) -> None:
     """Create an EnhanceTask for a just-succeeded GenerationTask."""
     frame_count = int(fps * duration)
@@ -168,6 +169,8 @@ async def _queue_enhance_for_task(
     res_map = {"720p": (1280, 720), "480p": (854, 480)}
     res_str = resolution or task.resolution_requested or "720p"
     width, height = res_map.get(res_str, (1280, 720))
+
+    out_res = output_resolution or task.upscale_resolution or "1080p"
 
     # Download video now to get real size (required by Topaz create_request)
     try:
@@ -194,14 +197,14 @@ async def _queue_enhance_for_task(
             source_duration=float(duration),
             source_frame_count=frame_count,
             source_size=size,
-            output_resolution=task.upscale_resolution,
+            output_resolution=out_res,
             generation_task_id=task.id,
             local_path=task.local_path,
         )
 
     logger.info(
         "Worker: enhance queued for task {id} | {w}x{h} → {res} size={size}",
-        id=task.id, w=width, h=height, res=task.upscale_resolution, size=size,
+        id=task.id, w=width, h=height, res=out_res, size=size,
     )
 
     # Submit immediately while we still have video_bytes in memory

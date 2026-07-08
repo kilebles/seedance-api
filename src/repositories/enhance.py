@@ -72,6 +72,15 @@ async def list_processing(db: AsyncSession) -> list[EnhanceTask]:
     return list(result.scalars().all())
 
 
+async def get_by_generation_task_id(db: AsyncSession, generation_task_id: uuid.UUID) -> EnhanceTask | None:
+    result = await db.execute(
+        select(EnhanceTask)
+        .where(EnhanceTask.generation_task_id == generation_task_id)
+        .order_by(EnhanceTask.created_at.desc())
+    )
+    return result.scalars().first()
+
+
 async def list_queued(db: AsyncSession) -> list[EnhanceTask]:
     """Tasks waiting to be submitted to Topaz (status=queued, no request_id yet)."""
     result = await db.execute(

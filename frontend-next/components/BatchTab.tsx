@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Upload, X, Square, ChevronLeft, Plus } from "lucide-react";
 import {
   Task, BatchSummary,
-  submitBatch, cancelTasksBulk, listBatchTasks, listBatches, retryBatchFailed, getTask,
+  submitBatch, cancelTasksBulk, listBatchTasks, listBatches, retryBatchFailed, batchUpscale, getTask,
   TaskStatus,
 } from "@/lib/api";
 import { VIDEO_MODELS, VideoModelDef } from "@/components/Settings";
@@ -280,6 +280,9 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [upscaleRes, setUpscaleRes] = useState<string | null>(null); // null = picker closed
+  const [upscaling, setUpscaling] = useState(false);
+  const [upscaleMsg, setUpscaleMsg] = useState<string | null>(null);
 
   const failedCount = rows.filter((r) => r.status === "failed").length;
   const succeededCount = rows.filter((r) => r.status === "succeeded").length;
@@ -342,6 +345,21 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
     }
   }
 
+  async function handleUpscale() {
+    if (!upscaleRes) return;
+    setUpscaling(true);
+    setUpscaleMsg(null);
+    try {
+      const res = await batchUpscale(batchId, upscaleRes);
+      setUpscaleMsg(res.queued > 0 ? `Queued ${res.queued} videos for upscale → ${res.resolution}` : "Nothing to upscale");
+      setUpscaleRes(null);
+    } catch (e) {
+      setUpscaleMsg(e instanceof Error ? e.message : "Error");
+    } finally {
+      setUpscaling(false);
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto py-4 space-y-6">
       {/* Header */}
@@ -355,6 +373,14 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
           {failedCount > 0 && <span className="text-xs text-red-400/70">{failedCount} failed</span>}
         </div>
         <div className="flex items-center gap-2">
+          {succeededCount > 0 && upscaleRes === null && (
+            <button
+              onClick={() => setUpscaleRes("1080p")}
+              className="px-3 py-1.5 rounded-lg bg-white/8 text-white/60 hover:bg-white/14 hover:text-white text-sm transition-colors"
+            >
+              Upscale (Topaz)
+            </button>
+          )}
           {failedCount > 0 && (
             <button
               onClick={handleRetryFailed}
@@ -376,6 +402,36 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
           )}
         </div>
       </div>
+
+      {/* Upscale resolution picker */}
+      {upscaleRes !== null && (
+        <div className="flex items-center gap-3 bg-white/3 rounded-xl px-4 py-3">
+          <span className="text-sm text-white/50 shrink-0">Upscale quality</span>
+          <div className="flex gap-1.5">
+            {["1080p", "4k"].map((o) => (
+              <Pill key={o} active={upscaleRes === o} onClick={() => setUpscaleRes(o)}>{o}</Pill>
+            ))}
+          </div>
+          <div className="flex gap-2 ml-auto">
+            <button
+              onClick={() => { setUpscaleRes(null); setUpscaleMsg(null); }}
+              className="px-3 py-1.5 rounded-lg bg-white/8 text-white/40 hover:text-white text-sm transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpscale}
+              disabled={upscaling}
+              className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:bg-white/90 disabled:opacity-40 transition-colors"
+            >
+              {upscaling ? "Starting..." : `Run on ${succeededCount} videos`}
+            </button>
+          </div>
+        </div>
+      )}
+      {upscaleMsg && (
+        <p className={`text-xs ${upscaleMsg.startsWith("Queued") ? "text-green-400/70" : "text-red-400/70"}`}>{upscaleMsg}</p>
+      )}
 
       {/* Progress bar */}
       <div className="w-full h-1 bg-white/8 rounded-full overflow-hidden">

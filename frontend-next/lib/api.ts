@@ -178,6 +178,19 @@ export async function getEnhanceStats(): Promise<EnhanceStats> {
   return res.json();
 }
 
+export async function batchUpscale(batchId: string, resolution: string): Promise<{ queued: number; resolution: string }> {
+  const res = await fetch(
+    `${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/upscale?resolution=${encodeURIComponent(resolution)}`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    try { const j = JSON.parse(text); if (j?.detail) throw new Error(j.detail); } catch (e) { if (!(e instanceof SyntaxError)) throw e; }
+    throw new Error(`API error ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function retryBatchFailed(batchId: string): Promise<{ retried: number }> {
   const res = await fetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/retry-failed`, { method: "POST" });
   if (!res.ok) throw new Error(`API error ${res.status}`);

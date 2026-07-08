@@ -143,6 +143,68 @@ async def list_tasks(
 
 
 @router.post(
+    "/batches/{batch_id}/upscale",
+    summary="Queue Topaz upscale for all succeeded tasks in a batch that aren't upscaled yet",
+)
+async def batch_upscale(
+    batch_id: str = Path(...),
+    resolution: str = Query(..., description="1080p or 4k"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from sqlalchemy import select
+    from src.models.generation import GenerationTask
+    from src.models.enhance import EnhanceTask
+    from src.repositories import enhance as enhance_repo
+    from src.core.database import AsyncSessionLocal
+    from src.services import worker as worker_mod
+
+    if resolution not in ("1080p", "4k"):
+        raise HTTPException(status_code=422, detail="resolution must be 1080p or 4k")
+
+    # Find succeeded tasks in this batch that have no active enhance task
+    q = (
+        select(GenerationTask)
+        .outerjoin(EnhanceTask, EnhanceTask.generation_task_id == GenerationTask.id)
+        .where(GenerationTask.batch_id == batch_id)
+        .where(GenerationTask.status == "succeeded")
+        .where(GenerationTask.video_url.isnot(None))
+        .where(
+            (EnhanceTask.id.is_(None)) |
+            (EnhanceTask.status == "failed")
+        )
+    )
+    result = await db.execute(q)
+    tasks = result.scalars().all()
+
+    if not tasks:
+        return {"queued": 0, "message": "No tasks to upscale"}
+
+    logger.info("Batch upscale | batch={bid} tasks={n} res={res}", bid=batch_id[:8], n=len(tasks), res=resolution)
+
+    # Queue enhance tasks — do heavy work (download+submit) in background
+    import asyncio
+    from fastapi.concurrency import run_in_threadpool
+
+    async def _run():
+        for gen_task in tasks:
+            try:
+                await worker_mod._queue_enhance_for_task(
+                    gen_task,
+                    gen_task.video_url,
+                    fps=gen_task.framespersecond or 24,
+                    duration=gen_task.duration_actual or gen_task.duration_requested or 8,
+                    resolution=gen_task.resolution_actual or gen_task.resolution_requested,
+                    output_resolution=resolution,
+                )
+            except Exception as exc:
+                logger.error("Batch upscale: failed to queue {id} — {exc}", id=gen_task.id, exc=exc)
+
+    asyncio.ensure_future(_run())
+
+    return {"queued": len(tasks), "resolution": resolution}
+
+
+@router.post(
     "/batches/{batch_id}/retry-failed",
     summary="Re-queue failed tasks in a batch",
 )
