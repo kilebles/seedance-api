@@ -20,6 +20,63 @@ OUTPUT_DIR = Path("/app/output")
 YADISK_TOKEN = os.environ.get("YANDEX_DISK_TOKEN", "")
 YADISK_API = "https://cloud-api.yandex.net/v1/disk/resources"
 
+# ── Video models (mirrors frontend-next/components/Settings.tsx) ──────────────
+
+VIDEO_MODELS = [
+    {
+        "id": "dreamina-seedance-2-0-260128",
+        "label": "Seedance 2.0",
+        "resolutions": ["480p", "720p", "1080p", "4k"],
+        "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+        "durations": [4,5,6,7,8,9,10,11,12,13,14,15],
+        "supports_audio": True,
+        "supports_seed": False,
+    },
+    {
+        "id": "dreamina-seedance-2-0-mini-260615",
+        "label": "Seedance 2.0 Mini",
+        "resolutions": ["480p", "720p"],
+        "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+        "durations": [4,5,6,7,8,9,10,11,12,13,14,15],
+        "supports_audio": True,
+        "supports_seed": False,
+    },
+    {
+        "id": "dreamina-seedance-2-0-fast-260128",
+        "label": "Seedance 2.0 Fast",
+        "resolutions": ["480p", "720p"],
+        "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+        "durations": [4,5,6,7,8,9,10,11,12,13,14,15],
+        "supports_audio": True,
+        "supports_seed": False,
+    },
+    {
+        "id": "seedance-1-5-pro-251215",
+        "label": "Seedance 1.5 Pro",
+        "resolutions": ["480p", "720p", "1080p"],
+        "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"],
+        "durations": [4,5,6,7,8,9,10,11,12],
+        "supports_audio": True,
+        "supports_seed": True,
+    },
+    {
+        "id": "seedance-1-0-pro-250528",
+        "label": "Seedance 1.0 Pro",
+        "resolutions": ["480p", "720p", "1080p"],
+        "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+        "durations": [2,3,4,5,6,7,8,9,10,11,12],
+        "supports_audio": False,
+        "supports_seed": True,
+    },
+]
+
+VIDEO_MODEL_IDS = [m["id"] for m in VIDEO_MODELS]
+VIDEO_MODEL_LABELS = {m["id"]: m["label"] for m in VIDEO_MODELS}
+VIDEO_MODEL_MAP = {m["id"]: m for m in VIDEO_MODELS}
+
+def _get_model_def(model_id: str) -> dict:
+    return VIDEO_MODEL_MAP.get(model_id, VIDEO_MODELS[0])
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -120,7 +177,8 @@ def _submit(prompt: str,
             image_bytes: bytes | None, image_mime: str | None,
             last_frame_bytes: bytes | None, last_frame_mime: str | None,
             ratio: str, resolution: str, duration: int | None,
-            generate_audio: bool, seed: int | None = None,
+            generate_audio: bool, model: str | None = None,
+            seed: int | None = None,
             upscale_resolution: str | None = None) -> dict:
     content: list[dict] = []
 
@@ -146,6 +204,8 @@ def _submit(prompt: str,
         "resolution": resolution,
         "generate_audio": generate_audio,
     }
+    if model:
+        payload["model"] = model
     if duration:
         payload["duration"] = duration
     if seed is not None:
@@ -236,28 +296,48 @@ with tab_generate:
                     type=["jpg", "jpeg", "png", "webp"],
                 )
 
+            video_model = st.selectbox(
+                "Model",
+                VIDEO_MODEL_IDS,
+                format_func=lambda x: VIDEO_MODEL_LABELS[x],
+                index=0,
+                key="g_model",
+            )
+            model_def = _get_model_def(video_model)
+
             col1, col2, col3 = st.columns(3)
             with col1:
-                ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"])
+                ratio = st.selectbox("Aspect ratio", model_def["ratios"])
             with col2:
-                resolution = st.selectbox("Resolution", ["720p", "480p"])
+                res_list = model_def["resolutions"]
+                resolution = st.selectbox("Resolution", res_list, index=min(1, len(res_list) - 1))
             with col3:
+                dur_list = model_def["durations"]
                 duration = st.selectbox(
                     "Duration (s)",
-                    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-                    index=4,
+                    dur_list,
+                    index=min(4, len(dur_list) - 1),
                     format_func=lambda x: f"{x}s",
                 )
 
-            generate_audio = st.checkbox("Generate audio", value=True)
+            generate_audio = st.checkbox(
+                "Generate audio",
+                value=model_def["supports_audio"],
+                disabled=not model_def["supports_audio"],
+            )
 
             col_seed1, col_seed2 = st.columns([1, 2])
             with col_seed1:
-                fixed_seed = st.checkbox("Fixed seed", value=False)
+                fixed_seed = st.checkbox(
+                    "Fixed seed",
+                    value=False,
+                    disabled=not model_def["supports_seed"],
+                )
             with col_seed2:
                 seed_value = st.number_input(
                     "Seed", min_value=0, max_value=4294967295, value=0, step=1,
-                    disabled=not fixed_seed, label_visibility="collapsed",
+                    disabled=not fixed_seed or not model_def["supports_seed"],
+                    label_visibility="collapsed",
                 )
 
             submitted = st.form_submit_button("Generate video", type="primary")
@@ -285,6 +365,7 @@ with tab_generate:
                             resolution=resolution,
                             duration=dur,
                             generate_audio=generate_audio,
+                            model=video_model,
                             seed=seed,
                             upscale_resolution=upscale_res if upscale else None,
                         )
@@ -298,6 +379,7 @@ with tab_generate:
                     "prompt": prompt.strip(),
                     "resolution": resolution,
                     "ratio": ratio,
+                    "model": video_model,
                     "upscale_resolution": upscale_res if upscale else None,
                 })
 
@@ -636,20 +718,36 @@ with tab_batch:
     with st.form("batch_form"):
         xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"])
 
+        b_model = st.selectbox(
+            "Model",
+            VIDEO_MODEL_IDS,
+            format_func=lambda x: VIDEO_MODEL_LABELS[x],
+            index=0,
+            key="b_model",
+        )
+        b_model_def = _get_model_def(b_model)
+
         col1, col2, col3 = st.columns(3)
         with col1:
-            b_ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], key="b_ratio")
+            b_ratio = st.selectbox("Aspect ratio", b_model_def["ratios"], key="b_ratio")
         with col2:
-            b_resolution = st.selectbox("Resolution", ["720p", "480p"], key="b_resolution")
+            b_res_list = b_model_def["resolutions"]
+            b_resolution = st.selectbox("Resolution", b_res_list, index=min(1, len(b_res_list) - 1), key="b_resolution")
         with col3:
+            b_dur_list = b_model_def["durations"]
             b_duration = st.selectbox(
                 "Duration (s)",
-                [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-                index=4,
+                b_dur_list,
+                index=min(4, len(b_dur_list) - 1),
                 format_func=lambda x: f"{x}s",
                 key="b_duration",
             )
-        b_audio = st.checkbox("Generate audio", value=True, key="b_audio")
+        b_audio = st.checkbox(
+            "Generate audio",
+            value=b_model_def["supports_audio"],
+            disabled=not b_model_def["supports_audio"],
+            key="b_audio",
+        )
 
         batch_submitted = st.form_submit_button("Start batch", type="primary")
 
@@ -660,6 +758,7 @@ with tab_batch:
             with st.spinner("Submitting batch..."):
                 try:
                     batch_data: dict = {
+                        "model": b_model,
                         "ratio": b_ratio,
                         "resolution": b_resolution,
                         "duration": str(b_duration),
