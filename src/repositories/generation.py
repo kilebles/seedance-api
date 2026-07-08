@@ -143,6 +143,20 @@ async def set_batch_status(db: AsyncSession, output_dir: str, from_statuses: lis
     return result.rowcount
 
 
+async def delete_batch(db: AsyncSession, batch_id: str) -> int:
+    """Hard-delete all generation_tasks (and their enhance_tasks) for a batch."""
+    from sqlalchemy import delete as sa_delete
+    from src.models.enhance import EnhanceTask
+
+    id_result = await db.execute(select(GenerationTask.id).where(GenerationTask.batch_id == batch_id))
+    task_ids = list(id_result.scalars().all())
+    if task_ids:
+        await db.execute(sa_delete(EnhanceTask).where(EnhanceTask.generation_task_id.in_(task_ids)))
+    result = await db.execute(sa_delete(GenerationTask).where(GenerationTask.batch_id == batch_id))
+    await db.commit()
+    return result.rowcount
+
+
 async def set_batch_status_by_id(db: AsyncSession, batch_id: str, from_statuses: list[str], to_status: str) -> int:
     """Update status for all tasks in a batch (matched by batch_id). Returns count."""
     from sqlalchemy import update

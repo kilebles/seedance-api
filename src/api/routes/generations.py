@@ -245,6 +245,57 @@ async def batch_upscale(
     return {"queued": len(tasks), "resolution": resolution}
 
 
+@router.delete(
+    "/batches/{batch_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Hard-delete a batch and all its tasks",
+)
+async def delete_batch(
+    batch_id: str = Path(...),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    deleted = await generation_repo.delete_batch(db, batch_id)
+    logger.info("Batch deleted | batch={bid} tasks={n}", bid=batch_id[:8], n=deleted)
+
+
+@router.post(
+    "/tasks/{task_id}/upscale",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue Topaz upscale for a single succeeded task",
+)
+async def upscale_single_task(
+    task_id: uuid.UUID = Path(...),
+    resolution: str = Query(..., description="1080p or 4k"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    import asyncio
+    from src.services import worker as worker_mod
+
+    if resolution not in ("1080p", "4k"):
+        raise HTTPException(status_code=422, detail="resolution must be 1080p or 4k")
+
+    task = await generation_repo.get(db, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "succeeded" or not task.video_url:
+        raise HTTPException(status_code=409, detail="Task must be succeeded with a video_url")
+
+    await generation_repo.update(db, task_id, upscale_resolution=resolution)
+    # Re-fetch to get updated task
+    task = await generation_repo.get(db, task_id)
+
+    asyncio.ensure_future(worker_mod._queue_enhance_for_task(
+        task,
+        task.video_url,
+        fps=task.framespersecond or 24,
+        duration=task.duration_actual or task.duration_requested or 8,
+        resolution=task.resolution_actual or task.resolution_requested,
+        output_resolution=resolution,
+    ))
+    logger.info("Single task upscale queued | id={id} res={res}", id=task_id, res=resolution)
+    return {"queued": 1, "resolution": resolution}
+
+
 @router.post(
     "/batches/{batch_id}/retry-failed",
     summary="Re-queue failed tasks in a batch",

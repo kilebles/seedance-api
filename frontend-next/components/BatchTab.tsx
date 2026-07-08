@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, X, Square, ChevronLeft, Plus } from "lucide-react";
+import { Upload, X, Square, ChevronLeft, Plus, Trash2 } from "lucide-react";
 import {
   Task, BatchSummary,
-  submitBatch, cancelTasksBulk, listBatchTasks, listBatches, retryBatchFailed, batchUpscale, getTask,
+  submitBatch, cancelTasksBulk, listBatchTasks, listBatches, retryBatchFailed, getTask,
+  deleteBatch,
   TaskStatus,
 } from "@/lib/api";
 import { VIDEO_MODELS, VideoModelDef } from "@/components/Settings";
@@ -52,11 +53,27 @@ function BatchList({
   batches,
   onSelect,
   onNew,
+  onDeleted,
 }: {
   batches: BatchSummary[];
   onSelect: (b: BatchSummary) => void;
   onNew: () => void;
+  onDeleted: (batchId: string) => void;
 }) {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete(batchId: string) {
+    setDeleting(true);
+    try {
+      await deleteBatch(batchId);
+      setConfirmId(null);
+      onDeleted(batchId);
+    } catch {/* ignore */} finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="max-w-5xl mx-auto py-4 space-y-4">
       <div className="flex items-center justify-between">
@@ -88,29 +105,62 @@ function BatchList({
             const date = b.created_at
               ? new Date(b.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
               : "";
+
+            if (confirmId === b.batch_id) {
+              return (
+                <div key={b.batch_id} className="bg-white/3 rounded-2xl p-4 space-y-3">
+                  <p className="text-sm text-white/70">Delete <span className="font-medium">{b.name}</span>?</p>
+                  <p className="text-xs text-white/30">All {b.total} tasks will be permanently removed.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmId(null)}
+                      className="flex-1 py-1.5 rounded-lg bg-white/8 text-white/50 hover:text-white text-sm transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleDelete(b.batch_id)}
+                      disabled={deleting}
+                      className="flex-1 py-1.5 rounded-lg bg-red-500/80 text-white text-sm hover:bg-red-500 disabled:opacity-40 transition-colors"
+                    >
+                      {deleting ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
             return (
-              <button
-                key={b.batch_id}
-                onClick={() => onSelect(b)}
-                className="text-left bg-white/3 hover:bg-white/6 rounded-2xl p-4 transition-colors space-y-3"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm text-white/80 font-medium truncate leading-tight">{b.name}</p>
-                  <span className="text-xs text-white/25 shrink-0 mt-0.5">{date}</span>
-                </div>
-                <div className="w-full h-0.5 bg-white/8 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${allDone ? "bg-green-400/60" : "bg-white/40"}`}
-                    style={{ width: `${progress * 100}%` }}
-                  />
-                </div>
-                <div className="flex items-center gap-3 text-xs text-white/35">
-                  <span>{b.done} / {b.total}</span>
-                  {b.failed > 0 && <span className="text-red-400/60">{b.failed} failed</span>}
-                  {b.resolution && <span>{b.resolution}</span>}
-                  {b.upscale_resolution && <span>→{b.upscale_resolution}</span>}
-                </div>
-              </button>
+              <div key={b.batch_id} className="group relative">
+                <button
+                  onClick={() => onSelect(b)}
+                  className="w-full text-left bg-white/3 hover:bg-white/6 rounded-2xl p-4 transition-colors space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-white/80 font-medium truncate leading-tight">{b.name}</p>
+                    <span className="text-xs text-white/25 shrink-0 mt-0.5">{date}</span>
+                  </div>
+                  <div className="w-full h-0.5 bg-white/8 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${allDone ? "bg-green-400/60" : "bg-white/40"}`}
+                      style={{ width: `${progress * 100}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-white/35">
+                    <span>{b.done} / {b.total}</span>
+                    {b.failed > 0 && <span className="text-red-400/60">{b.failed} failed</span>}
+                    {b.resolution && <span>{b.resolution}</span>}
+                    {b.upscale_resolution && <span>→{b.upscale_resolution}</span>}
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmId(b.batch_id); }}
+                  className="absolute top-3 right-3 w-7 h-7 rounded-lg flex items-center justify-center text-white/0 group-hover:text-white/30 hover:!text-red-400 hover:bg-white/8 transition-colors"
+                  title="Delete batch"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
             );
           })}
         </div>
@@ -280,9 +330,6 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [upscaleRes, setUpscaleRes] = useState<string | null>(null); // null = picker closed
-  const [upscaling, setUpscaling] = useState(false);
-  const [upscaleMsg, setUpscaleMsg] = useState<string | null>(null);
 
   const failedCount = rows.filter((r) => r.status === "failed").length;
   const succeededCount = rows.filter((r) => r.status === "succeeded").length;
@@ -345,21 +392,6 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
     }
   }
 
-  async function handleUpscale() {
-    if (!upscaleRes) return;
-    setUpscaling(true);
-    setUpscaleMsg(null);
-    try {
-      const res = await batchUpscale(batchId, upscaleRes);
-      setUpscaleMsg(res.queued > 0 ? `Queued ${res.queued} videos for upscale → ${res.resolution}` : "Nothing to upscale");
-      setUpscaleRes(null);
-    } catch (e) {
-      setUpscaleMsg(e instanceof Error ? e.message : "Error");
-    } finally {
-      setUpscaling(false);
-    }
-  }
-
   return (
     <div className="max-w-3xl mx-auto py-4 space-y-6">
       {/* Header */}
@@ -373,14 +405,6 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
           {failedCount > 0 && <span className="text-xs text-red-400/70">{failedCount} failed</span>}
         </div>
         <div className="flex items-center gap-2">
-          {succeededCount > 0 && upscaleRes === null && (
-            <button
-              onClick={() => setUpscaleRes("1080p")}
-              className="px-3 py-1.5 rounded-lg bg-white/8 text-white/60 hover:bg-white/14 hover:text-white text-sm transition-colors"
-            >
-              Upscale (Topaz)
-            </button>
-          )}
           {failedCount > 0 && (
             <button
               onClick={handleRetryFailed}
@@ -402,36 +426,6 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
           )}
         </div>
       </div>
-
-      {/* Upscale resolution picker */}
-      {upscaleRes !== null && (
-        <div className="flex items-center gap-3 bg-white/3 rounded-xl px-4 py-3">
-          <span className="text-sm text-white/50 shrink-0">Upscale quality</span>
-          <div className="flex gap-1.5">
-            {["1080p", "4k"].map((o) => (
-              <Pill key={o} active={upscaleRes === o} onClick={() => setUpscaleRes(o)}>{o}</Pill>
-            ))}
-          </div>
-          <div className="flex gap-2 ml-auto">
-            <button
-              onClick={() => { setUpscaleRes(null); setUpscaleMsg(null); }}
-              className="px-3 py-1.5 rounded-lg bg-white/8 text-white/40 hover:text-white text-sm transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleUpscale}
-              disabled={upscaling}
-              className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:bg-white/90 disabled:opacity-40 transition-colors"
-            >
-              {upscaling ? "Starting..." : `Run on ${succeededCount} videos`}
-            </button>
-          </div>
-        </div>
-      )}
-      {upscaleMsg && (
-        <p className={`text-xs ${upscaleMsg.startsWith("Queued") ? "text-green-400/70" : "text-red-400/70"}`}>{upscaleMsg}</p>
-      )}
 
       {/* Progress bar */}
       <div className="w-full h-1 bg-white/8 rounded-full overflow-hidden">
@@ -533,6 +527,7 @@ export default function BatchTab() {
       batches={batches}
       onSelect={(b) => setView({ kind: "detail", batchId: b.batch_id })}
       onNew={() => setView({ kind: "new" })}
+      onDeleted={(id) => setBatches((prev) => prev.filter((b) => b.batch_id !== id))}
     />
   );
 }
