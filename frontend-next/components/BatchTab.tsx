@@ -62,6 +62,7 @@ function BatchList({
 }) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   async function handleDelete(batchId: string) {
     setDeleting(true);
@@ -71,6 +72,15 @@ function BatchList({
       onDeleted(batchId);
     } catch {/* ignore */} finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleDownload(batchId: string, name: string) {
+    setDownloadingId(batchId);
+    try {
+      await downloadBatch(batchId, name);
+    } catch {/* ignore */} finally {
+      setDownloadingId(null);
     }
   }
 
@@ -162,12 +172,13 @@ function BatchList({
                 <div className="px-5 pb-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
                   {canDownload ? (
                     <button
-                      onClick={(e) => { e.stopPropagation(); downloadBatch(b.batch_id, b.name); }}
-                      className="flex items-center gap-1.5 text-xs text-white/35 hover:text-white/70 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); handleDownload(b.batch_id, b.name); }}
+                      disabled={downloadingId === b.batch_id}
+                      className="flex items-center gap-1.5 text-xs text-white/35 hover:text-white/70 disabled:opacity-50 transition-colors"
                       title="Download as zip"
                     >
                       <Download size={12} />
-                      Download
+                      {downloadingId === b.batch_id ? "Zipping..." : "Download"}
                     </button>
                   ) : (
                     <span />

@@ -192,14 +192,19 @@ export async function batchUpscale(batchId: string, resolution: string): Promise
   return res.json();
 }
 
-export function downloadBatch(batchId: string, name: string): void {
+export async function downloadBatch(batchId: string, name: string): Promise<void> {
   const url = `${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/download?name=${encodeURIComponent(name)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed ${res.status}`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
+  a.href = objectUrl;
   a.download = `${name}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
 }
 
 export async function deleteBatch(batchId: string): Promise<void> {
