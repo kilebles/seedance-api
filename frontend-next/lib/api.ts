@@ -140,6 +140,59 @@ export async function listTasks(): Promise<Task[]> {
   return res.json();
 }
 
+export interface BatchTask {
+  id: string;
+  name: string;
+  status: TaskStatus;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export async function submitBatch(
+  file: File,
+  params: {
+    model: string;
+    ratio: string;
+    resolution: string;
+    duration: number;
+    generate_audio: boolean;
+    upscale_resolution?: string;
+  }
+): Promise<BatchTask[]> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("model", params.model);
+  form.append("ratio", params.ratio);
+  form.append("resolution", params.resolution);
+  form.append("duration", String(params.duration));
+  form.append("generate_audio", String(params.generate_audio).toLowerCase());
+  if (params.upscale_resolution) form.append("upscale_resolution", params.upscale_resolution);
+
+  const res = await fetch(`${API_BASE}/generations/batch`, { method: "POST", body: form });
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text);
+      const msg = json?.detail || json?.error?.message || json?.message;
+      if (msg) throw new Error(msg);
+    } catch (e) {
+      if (e instanceof SyntaxError === false) throw e;
+    }
+    throw new Error(`Error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function cancelTasksBulk(taskIds: string[]): Promise<{ cancelled: number; skipped: number }> {
+  const res = await fetch(`${API_BASE}/generations/tasks/cancel-bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export function toDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

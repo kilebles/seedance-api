@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, listImageTasks, getImageTask, ContentItem } from "@/lib/api";
 import GenerateInput from "@/components/GenerateInput";
 import TaskCard from "@/components/TaskCard";
+import BatchTab from "@/components/BatchTab";
 import { useLocalStorage } from "@/lib/useLocalStorage";
 import { GenerateMode, ImageInputMode } from "@/components/Settings";
 
@@ -18,7 +19,7 @@ function isExpired(t: Task): boolean {
   return Date.now() - new Date(t.updated_at).getTime() >= 23.5 * 60 * 60 * 1000;
 }
 
-type Tab = "video" | "image" | "billing";
+type Tab = "video" | "image" | "batch" | "billing";
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -112,6 +113,7 @@ export default function Home() {
   useEffect(() => {
     if (tab === "video") setGenerateMode("video");
     else if (tab === "image") setGenerateMode("image");
+    // batch and billing tabs don't change generateMode
   }, [tab]);
 
   // Real-time refresh every 30s
@@ -179,7 +181,7 @@ export default function Home() {
       {/* Top tabs */}
       <div className="shrink-0 px-6 pt-4 pb-0">
         <div className="max-w-5xl mx-auto flex gap-1">
-          {(["video", "image", "billing"] as Tab[]).map((t) => (
+          {(["video", "image", "batch", "billing"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -189,14 +191,14 @@ export default function Home() {
                   : "text-white/35 hover:text-white/60"
               }`}
             >
-              {t === "billing" ? "Billing" : t === "video" ? "Video" : "Image"}
+              {t === "billing" ? "Billing" : t === "video" ? "Video" : t === "image" ? "Image" : "Batch"}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Toolbar — hidden on billing */}
-      {tab !== "billing" && (
+      {/* Toolbar — hidden on billing and batch */}
+      {tab !== "billing" && tab !== "batch" && (
         <div className="shrink-0 px-6 pt-3 pb-3">
           <div className="max-w-5xl mx-auto flex items-center gap-3">
             <div className="flex-1 flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2">
@@ -274,6 +276,9 @@ export default function Home() {
             )}
           </>
         )}
+
+        {/* Batch tab */}
+        {tab === "batch" && <BatchTab />}
 
         {/* Billing tab */}
         {tab === "billing" && (
@@ -397,8 +402,8 @@ export default function Home() {
         )}
       </main>
 
-      {/* Bottom input — hidden on billing */}
-      {tab !== "billing" && (
+      {/* Bottom input — hidden on billing and batch */}
+      {tab !== "billing" && tab !== "batch" && (
         <div className="shrink-0 px-6 pb-6 pt-3">
           {error && <p className="text-red-400 text-sm mb-2 text-center">{error}</p>}
           <div className="max-w-5xl mx-auto">
