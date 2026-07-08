@@ -141,3 +141,16 @@ async def set_batch_status(db: AsyncSession, output_dir: str, from_statuses: lis
     )
     await db.commit()
     return result.rowcount
+
+
+async def set_batch_status_by_id(db: AsyncSession, batch_id: str, from_statuses: list[str], to_status: str) -> int:
+    """Update status for all tasks in a batch (matched by batch_id). Returns count."""
+    from sqlalchemy import update
+    result = await db.execute(
+        update(GenerationTask)
+        .where(GenerationTask.batch_id == batch_id)
+        .where(GenerationTask.status.in_(from_statuses))
+        .values(status=to_status, error_code=None, error_message=None, external_id=None)
+    )
+    await db.commit()
+    return result.rowcount

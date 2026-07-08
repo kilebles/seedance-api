@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Upload, X, Square, ChevronLeft, Plus } from "lucide-react";
 import {
   Task, BatchSummary,
-  submitBatch, cancelTasksBulk, listBatchTasks, listBatches, getTask,
+  submitBatch, cancelTasksBulk, listBatchTasks, listBatches, retryBatchFailed, getTask,
   TaskStatus,
 } from "@/lib/api";
 import { VIDEO_MODELS, VideoModelDef } from "@/components/Settings";
@@ -58,7 +58,7 @@ function BatchList({
   onNew: () => void;
 }) {
   return (
-    <div className="max-w-3xl mx-auto py-4 space-y-4">
+    <div className="max-w-5xl mx-auto py-4 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/40">Batches</p>
         <button
@@ -81,7 +81,7 @@ function BatchList({
           </button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {batches.map((b) => {
             const progress = b.total > 0 ? b.done / b.total : 0;
             const allDone = b.done === b.total;
@@ -92,11 +92,11 @@ function BatchList({
               <button
                 key={b.batch_id}
                 onClick={() => onSelect(b)}
-                className="w-full text-left bg-white/3 hover:bg-white/6 rounded-2xl p-4 transition-colors space-y-3"
+                className="text-left bg-white/3 hover:bg-white/6 rounded-2xl p-4 transition-colors space-y-3"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm text-white/80 font-medium truncate">{b.name}</p>
-                  <span className="text-xs text-white/30 shrink-0">{date}</span>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm text-white/80 font-medium truncate leading-tight">{b.name}</p>
+                  <span className="text-xs text-white/25 shrink-0 mt-0.5">{date}</span>
                 </div>
                 <div className="w-full h-0.5 bg-white/8 rounded-full overflow-hidden">
                   <div
@@ -104,9 +104,9 @@ function BatchList({
                     style={{ width: `${progress * 100}%` }}
                   />
                 </div>
-                <div className="flex items-center gap-4 text-xs text-white/35">
+                <div className="flex items-center gap-3 text-xs text-white/35">
                   <span>{b.done} / {b.total}</span>
-                  {b.failed > 0 && <span className="text-red-400/70">{b.failed} failed</span>}
+                  {b.failed > 0 && <span className="text-red-400/60">{b.failed} failed</span>}
                   {b.resolution && <span>{b.resolution}</span>}
                   {b.upscale_resolution && <span>→{b.upscale_resolution}</span>}
                 </div>
@@ -279,10 +279,13 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
   const [rows, setRows] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
+  const failedCount = rows.filter((r) => r.status === "failed").length;
+  const succeededCount = rows.filter((r) => r.status === "succeeded").length;
   const allDone = rows.length > 0 && rows.every((r) => TERMINAL.includes(r.status));
   const doneCount = rows.filter((r) => TERMINAL.includes(r.status)).length;
-  const progress = rows.length > 0 ? doneCount / rows.length : 0;
+  const progress = rows.length > 0 ? succeededCount / rows.length : 0;
 
   const batchIdRef = useRef(batchId);
 
@@ -328,6 +331,17 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
     }
   }
 
+  async function handleRetryFailed() {
+    setRetrying(true);
+    try {
+      await retryBatchFailed(batchId);
+      const tasks = await listBatchTasks(batchId);
+      setRows(tasks);
+    } catch {/* ignore */} finally {
+      setRetrying(false);
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto py-4 space-y-6">
       {/* Header */}
@@ -336,19 +350,31 @@ function BatchDetail({ batchId, onBack }: { batchId: string; onBack: () => void 
           <button onClick={onBack} className="text-white/30 hover:text-white/60 transition-colors">
             <ChevronLeft size={18} />
           </button>
-          <span className="text-sm text-white/60">{allDone ? "Batch complete" : "Running batch"}</span>
-          <span className="text-sm text-white/30">{doneCount} / {rows.length}</span>
+          <span className="text-sm text-white/60">{allDone ? "Done" : "Running"}</span>
+          <span className="text-sm text-white/30">{succeededCount} / {rows.length}</span>
+          {failedCount > 0 && <span className="text-xs text-red-400/70">{failedCount} failed</span>}
         </div>
-        {!allDone && (
-          <button
-            onClick={handleStop}
-            disabled={stopping}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/8 text-white/60 hover:bg-white/14 hover:text-white text-sm transition-colors disabled:opacity-40"
-          >
-            <Square size={12} />
-            Stop
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {failedCount > 0 && (
+            <button
+              onClick={handleRetryFailed}
+              disabled={retrying}
+              className="px-3 py-1.5 rounded-lg bg-white/8 text-white/60 hover:bg-white/14 hover:text-white text-sm transition-colors disabled:opacity-40"
+            >
+              {retrying ? "Retrying..." : `Retry failed (${failedCount})`}
+            </button>
+          )}
+          {!allDone && (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/8 text-white/60 hover:bg-white/14 hover:text-white text-sm transition-colors disabled:opacity-40"
+            >
+              <Square size={12} />
+              Stop
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Progress bar */}

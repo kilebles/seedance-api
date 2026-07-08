@@ -166,6 +166,12 @@ export async function listBatches(): Promise<BatchSummary[]> {
   return res.json();
 }
 
+export async function retryBatchFailed(batchId: string): Promise<{ retried: number }> {
+  const res = await fetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/retry-failed`, { method: "POST" });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export interface BatchTask {
   id: string;
   name: string;

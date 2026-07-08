@@ -142,6 +142,19 @@ async def list_tasks(
     return [TaskDB.model_validate(t) for t in tasks]
 
 
+@router.post(
+    "/batches/{batch_id}/retry-failed",
+    summary="Re-queue failed tasks in a batch",
+)
+async def retry_batch_failed(
+    batch_id: str = Path(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    count = await generation_repo.set_batch_status_by_id(db, batch_id, from_statuses=["failed"], to_status="queued")
+    logger.info("Batch retry-failed | batch={bid} count={n}", bid=batch_id[:8], n=count)
+    return {"retried": count}
+
+
 @router.get(
     "/batches",
     summary="List all batches (grouped by batch_id)",
