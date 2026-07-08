@@ -433,11 +433,11 @@ with tab_generate:
                         if last_frame:
                             with st.expander("▶ Смотреть видео", expanded=False):
                                 st.video(video_url)
-                            st.image(last_frame, use_container_width=True)
+                            st.image(last_frame, width="stretch")
                         else:
                             st.video(video_url)
                     elif last_frame:
-                        st.image(last_frame, use_container_width=True)
+                        st.image(last_frame, width="stretch")
                     else:
                         st.info("URL истёк")
                 elif cur_status in ("queued", "running"):
@@ -499,7 +499,7 @@ with tab_generate:
             st.caption(f"Сгенерировано в этой сессии: {len(img_tasks)}")
             for t in img_tasks:
                 if t.get("image_url"):
-                    st.image(t["image_url"], use_container_width=True)
+                    st.image(t["image_url"], width="stretch")
                 elif t.get("status") == "failed":
                     st.error(t.get("error_message") or t.get("error_code") or "failed")
                 prompt_short = (t["prompt"][:80] + "…") if len(t.get("prompt", "")) > 80 else t.get("prompt", "")
@@ -542,11 +542,11 @@ with tab_video:
                     if last_frame:
                         with st.expander("▶ Смотреть", expanded=False):
                             st.video(video_url)
-                        st.image(last_frame, use_container_width=True)
+                        st.image(last_frame, width="stretch")
                     else:
                         st.video(video_url)
                 elif last_frame:
-                    st.image(last_frame, use_container_width=True)
+                    st.image(last_frame, width="stretch")
                 else:
                     st.warning("URL expired")
 
@@ -588,7 +588,7 @@ with tab_image:
 
             with cols[i % 3]:
                 if t.get("image_url"):
-                    st.image(t["image_url"], use_container_width=True)
+                    st.image(t["image_url"], width="stretch")
                 else:
                     st.warning("URL expired")
 
@@ -655,7 +655,7 @@ with tab_billing:
                 "Avg tokens/task": round(v["total_tokens"] / v["count"]) if v["count"] else 0,
             })
 
-        st.dataframe(rows, use_container_width=True)
+        st.dataframe(rows, width="stretch")
 
         total_vid_tokens = sum(t.get("total_tokens") or 0 for t in video_done)
         total_vid_tasks = len(video_done)
@@ -694,7 +694,7 @@ with tab_billing:
                 "Avg tokens/task": round(v["total_tokens"] / v["count"]) if v["count"] else 0,
             })
 
-        st.dataframe(rows_img, use_container_width=True)
+        st.dataframe(rows_img, width="stretch")
 
         total_img_tokens = sum(t.get("total_tokens") or 0 for t in image_done)
         total_img_tasks = len(image_done)
@@ -828,7 +828,7 @@ with tab_batch:
                 "error": t.get("error_code") or t.get("error_message") or "",
             })
 
-        st.dataframe(rows, use_container_width=True)
+        st.dataframe(rows, width="stretch")
 
         done = sum(1 for r in rows if any(x in r["status"] for x in ("✅", "❌", "🕐")))
         st.progress(done / len(rows))
