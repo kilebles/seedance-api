@@ -503,10 +503,13 @@ with tab_generate:
             st.divider()
             st.caption(f"Сгенерировано в этой сессии: {len(img_tasks)}")
             for t in img_tasks:
-                if t.get("image_url"):
-                    st.image(t["image_url"], width="stretch")
+                url = t.get("image_url")
+                if url:
+                    st.markdown(f'<img src="{url}" style="width:100%;border-radius:8px">', unsafe_allow_html=True)
                 elif t.get("status") == "failed":
                     st.error(t.get("error_message") or t.get("error_code") or "failed")
+                else:
+                    st.info("URL истёк")
                 prompt_short = (t["prompt"][:80] + "…") if len(t.get("prompt", "")) > 80 else t.get("prompt", "")
                 meta = f"`{t.get('image_size') or t.get('size_requested') or ''}`"
                 st.caption(f"{meta}  \n{prompt_short}")
@@ -562,7 +565,7 @@ with tab_video:
                 if upscale_val:
                     meta_parts.append(f"`→{upscale_val}`")
                 if model_val:
-                    meta_parts.append(f"`{model_val.split('-')[1] if '-' in model_val else model_val}`")
+                    meta_parts.append(f"`{VIDEO_MODEL_LABELS.get(model_val, model_val)}`")
                 st.caption("  ".join(meta_parts) + f"  \n{prompt_short}")
 
 
@@ -592,8 +595,9 @@ with tab_image:
             model_val = t.get("model") or ""
 
             with cols[i % 3]:
-                if t.get("image_url"):
-                    st.image(t["image_url"], width="stretch")
+                url = t.get("image_url")
+                if url:
+                    st.markdown(f'<img src="{url}" style="width:100%;border-radius:8px">', unsafe_allow_html=True)
                 else:
                     st.warning("URL expired")
 
@@ -711,93 +715,96 @@ with tab_billing:
 
 # ── Batch tab ─────────────────────────────────────────────────────────────────
 with tab_batch:
-    st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
+    batch_running = "batch_task_ids" in st.session_state
 
-    # All controls outside the form so model change triggers re-render
-    b_model = st.selectbox(
-        "Model",
-        VIDEO_MODEL_IDS,
-        format_func=lambda x: VIDEO_MODEL_LABELS[x],
-        index=0,
-        key="b_model",
-    )
-    b_model_def = _get_model_def(b_model)
+    if not batch_running:
+        # ── Settings (shown only before batch is submitted) ────────────────────
+        st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        b_ratio = st.selectbox("Aspect ratio", b_model_def["ratios"], key="b_ratio")
-    with col2:
-        b_res_list = b_model_def["resolutions"]
-        b_resolution = st.selectbox("Resolution", b_res_list, index=min(1, len(b_res_list) - 1), key="b_resolution")
-    with col3:
-        b_dur_list = b_model_def["durations"]
-        b_duration = st.selectbox(
-            "Duration (s)",
-            b_dur_list,
-            index=min(4, len(b_dur_list) - 1),
-            format_func=lambda x: f"{x}s",
-            key="b_duration",
+        b_model = st.selectbox(
+            "Model",
+            VIDEO_MODEL_IDS,
+            format_func=lambda x: VIDEO_MODEL_LABELS[x],
+            index=0,
+            key="b_model",
         )
-    b_audio = st.checkbox(
-        "Generate audio",
-        value=b_model_def["supports_audio"],
-        disabled=not b_model_def["supports_audio"],
-        key="b_audio",
-    )
-    b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
-    b_upscale_res = st.selectbox(
-        "Upscale resolution",
-        ["1080p", "4k"],
-        key="b_upscale_res",
-        disabled=not b_upscale,
-    )
+        b_model_def = _get_model_def(b_model)
 
-    with st.form("batch_form"):
-        xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"])
-        batch_submitted = st.form_submit_button("Start batch", type="primary")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            b_ratio = st.selectbox("Aspect ratio", b_model_def["ratios"], key="b_ratio")
+        with col2:
+            b_res_list = b_model_def["resolutions"]
+            b_resolution = st.selectbox("Resolution", b_res_list, index=min(1, len(b_res_list) - 1), key="b_resolution")
+        with col3:
+            b_dur_list = b_model_def["durations"]
+            b_duration = st.selectbox(
+                "Duration (s)",
+                b_dur_list,
+                index=min(4, len(b_dur_list) - 1),
+                format_func=lambda x: f"{x}s",
+                key="b_duration",
+            )
+        b_audio = st.checkbox(
+            "Generate audio",
+            value=b_model_def["supports_audio"],
+            disabled=not b_model_def["supports_audio"],
+            key="b_audio",
+        )
+        b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
+        b_upscale_res = st.selectbox(
+            "Upscale resolution",
+            ["1080p", "4k"],
+            key="b_upscale_res",
+            disabled=not b_upscale,
+        )
 
-    if batch_submitted:
-        if not xlsx_file:
-            st.error("Please upload an xlsx file.")
-        else:
-            with st.spinner("Submitting batch..."):
-                try:
-                    batch_data: dict = {
-                        "model": b_model,
-                        "ratio": b_ratio,
-                        "resolution": b_resolution,
-                        "duration": str(b_duration),
-                        "generate_audio": str(b_audio).lower(),
-                    }
-                    if b_upscale:
-                        batch_data["upscale_resolution"] = b_upscale_res
+        with st.form("batch_form"):
+            xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"])
+            batch_submitted = st.form_submit_button("Start batch", type="primary")
 
-                    resp = httpx.post(
-                        f"{API_BASE}/generations/batch",
-                        files={"file": (xlsx_file.name, xlsx_file.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-                        data=batch_data,
-                        timeout=60,
-                    )
-                    resp.raise_for_status()
-                    tasks = resp.json()
-                except Exception as e:
-                    st.error(f"Failed to submit batch: {e}")
-                    tasks = []
+        if batch_submitted:
+            if not xlsx_file:
+                st.error("Please upload an xlsx file.")
+            else:
+                with st.spinner("Submitting batch..."):
+                    try:
+                        batch_data: dict = {
+                            "model": b_model,
+                            "ratio": b_ratio,
+                            "resolution": b_resolution,
+                            "duration": str(b_duration),
+                            "generate_audio": str(b_audio).lower(),
+                        }
+                        if b_upscale:
+                            batch_data["upscale_resolution"] = b_upscale_res
 
-            if tasks:
-                st.success(f"Батч отправлен: {len(tasks)} задач в очереди")
-                st.session_state["batch_task_ids"] = [t["id"] for t in tasks]
-                st.session_state["batch_names"] = {t["id"]: t.get("name", t["id"][:8]) for t in tasks}
-                first_path = tasks[0].get("local_path", "")
-                st.session_state["batch_output_dir"] = "/".join(first_path.split("/")[:-1]) if first_path else ""
+                        resp = httpx.post(
+                            f"{API_BASE}/generations/batch",
+                            files={"file": (xlsx_file.name, xlsx_file.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                            data=batch_data,
+                            timeout=60,
+                        )
+                        resp.raise_for_status()
+                        tasks = resp.json()
+                    except Exception as e:
+                        st.error(f"Failed to submit batch: {e}")
+                        tasks = []
 
-    # Show batch progress if we have tasks
-    if "batch_task_ids" in st.session_state:
+                if tasks:
+                    st.session_state["batch_task_ids"] = [t["id"] for t in tasks]
+                    st.session_state["batch_names"] = {t["id"]: t.get("name", t["id"][:8]) for t in tasks}
+                    first_path = tasks[0].get("local_path", "")
+                    st.session_state["batch_output_dir"] = "/".join(first_path.split("/")[:-1]) if first_path else ""
+                    st.rerun()
+
+    else:
+        # ── Batch progress ─────────────────────────────────────────────────────
         task_ids = st.session_state["batch_task_ids"]
         names = st.session_state["batch_names"]
         output_dir = st.session_state.get("batch_output_dir", "")
 
-        col_r, col_p, col_res, col_c = st.columns(4)
+        col_r, col_p, col_res, col_c, col_new = st.columns(5)
         with col_r:
             if st.button("Refresh", key="batch_refresh"):
                 st.rerun()
@@ -813,6 +820,12 @@ with tab_batch:
             if st.button("Cancel", key="batch_cancel", type="primary"):
                 httpx.post(f"{API_BASE}/generations/batch/cancel", params={"output_dir": output_dir}, timeout=10)
                 st.rerun()
+        with col_new:
+            if st.button("New batch", key="batch_new"):
+                del st.session_state["batch_task_ids"]
+                del st.session_state["batch_names"]
+                st.session_state.pop("batch_output_dir", None)
+                st.rerun()
 
         STATUS_ICON = {"queued": "⏳", "running": "⚙️", "succeeded": "✅", "failed": "❌", "expired": "🕐", "paused": "⏸️"}
 
@@ -824,7 +837,7 @@ with tab_batch:
             except Exception:
                 t = {"id": tid, "status": "?"}
             s = t.get("status", "?")
-            if s not in ("succeeded", "failed", "expired", "paused"):
+            if s not in ("succeeded", "failed", "expired", "paused", "cancelled"):
                 all_done = False
             rows.append({
                 "name": names.get(tid, tid[:8]),
@@ -835,7 +848,7 @@ with tab_batch:
 
         st.dataframe(rows, width="stretch")
 
-        done = sum(1 for r in rows if any(x in r["status"] for x in ("✅", "❌", "🕐")))
+        done = sum(1 for r in rows if any(x in r["status"] for x in ("✅", "❌", "🕐", "cancelled")))
         st.progress(done / len(rows))
         st.caption(f"Готово: {done}/{len(rows)}")
 
