@@ -474,26 +474,29 @@ with tab_batch:
     if "batch_task_ids" not in st.session_state:
         st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
 
-        b_model = st.selectbox(
-            "Model", VIDEO_MODEL_IDS,
-            format_func=lambda x: VIDEO_MODEL_LABELS[x],
-            index=0, key="b_model",
-        )
-        bc1, bc2, bc3 = st.columns(3)
-        with bc1:
-            b_ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"], key="b_ratio")
-        with bc2:
-            b_resolution = st.selectbox("Resolution", ["480p", "720p", "1080p", "4k"], index=1, key="b_resolution")
-        with bc3:
-            b_duration = st.selectbox(
-                "Duration (s)", [2,3,4,5,6,7,8,9,10,11,12,13,14,15],
-                index=6, format_func=lambda x: f"{x}s", key="b_duration",
-            )
-        b_audio = st.checkbox("Generate audio", value=True, key="b_audio")
-        b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
-        b_upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="b_upscale_res")
+        # file_uploader вне формы — иначе глючит при изменении других виджетов
         xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"], key="b_xlsx")
-        batch_submitted = st.button("Start batch", type="primary", key="b_submit")
+
+        with st.form("batch_form"):
+            b_model = st.selectbox(
+                "Model", VIDEO_MODEL_IDS,
+                format_func=lambda x: VIDEO_MODEL_LABELS[x],
+                index=0, key="b_model",
+            )
+            bc1, bc2, bc3 = st.columns(3)
+            with bc1:
+                b_ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"], key="b_ratio")
+            with bc2:
+                b_resolution = st.selectbox("Resolution", ["480p", "720p", "1080p", "4k"], index=1, key="b_resolution")
+            with bc3:
+                b_duration = st.selectbox(
+                    "Duration (s)", [2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+                    index=6, format_func=lambda x: f"{x}s", key="b_duration",
+                )
+            b_audio = st.checkbox("Generate audio", value=True, key="b_audio")
+            b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
+            b_upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="b_upscale_res")
+            batch_submitted = st.form_submit_button("Start batch", type="primary")
 
         if batch_submitted:
             if not xlsx_file:
@@ -502,14 +505,14 @@ with tab_batch:
                 with st.spinner("Submitting batch..."):
                     try:
                         batch_data: dict = {
-                            "model": st.session_state["b_model"],
-                            "ratio": st.session_state["b_ratio"],
-                            "resolution": st.session_state["b_resolution"],
-                            "duration": str(st.session_state["b_duration"]),
-                            "generate_audio": str(st.session_state["b_audio"]).lower(),
+                            "model": b_model,
+                            "ratio": b_ratio,
+                            "resolution": b_resolution,
+                            "duration": str(b_duration),
+                            "generate_audio": str(b_audio).lower(),
                         }
-                        if st.session_state.get("b_upscale"):
-                            batch_data["upscale_resolution"] = st.session_state["b_upscale_res"]
+                        if b_upscale:
+                            batch_data["upscale_resolution"] = b_upscale_res
                         resp = httpx.post(
                             f"{API_BASE}/generations/batch",
                             files={"file": (xlsx_file.name, xlsx_file.getvalue(),
