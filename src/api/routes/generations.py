@@ -259,3 +259,31 @@ async def cancel_tasks_bulk(
 
     logger.info("Bulk cancel | cancelled={c} skipped={s}", c=cancelled, s=skipped)
     return {"cancelled": cancelled, "skipped": skipped}
+
+
+@router.get("/enhance/stats", summary="Topaz enhance billing stats")
+async def enhance_stats(db: AsyncSession = Depends(get_db)) -> dict:
+    from sqlalchemy import select, func as sqlfunc
+    from src.models.enhance import EnhanceTask
+    result = await db.execute(
+        select(
+            EnhanceTask.output_resolution,
+            sqlfunc.count().label("total"),
+            sqlfunc.sum(EnhanceTask.cost_credits).label("total_credits"),
+        )
+        .where(EnhanceTask.status == "complete")
+        .group_by(EnhanceTask.output_resolution)
+    )
+    rows = result.mappings().all()
+    return {
+        "by_resolution": [
+            {
+                "resolution": r["output_resolution"],
+                "count": r["total"],
+                "total_credits": int(r["total_credits"] or 0),
+            }
+            for r in rows
+        ],
+        "total_count": sum(r["total"] for r in rows),
+        "total_credits": sum(int(r["total_credits"] or 0) for r in rows),
+    }

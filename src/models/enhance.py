@@ -47,5 +47,9 @@ class EnhanceTask(Base):
     download_url: Mapped[str | None] = mapped_column(String, nullable=True)
     expires_in_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # --- billing ---
+    # Topaz credit cost (actual, from estimates after accept). Nullable for old rows.
+    cost_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # --- error ---
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)

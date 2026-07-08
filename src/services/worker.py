@@ -247,12 +247,20 @@ async def _submit_enhance(task, video_bytes: bytes) -> None:
             await enhance_repo.update(db, task.id, status="failed", error_message=str(exc))
         return
 
+    # Store cost estimate (take max of range, e.g. [1, 2] → 2)
+    cost = estimates.get("cost")
+    cost_credits: int | None = None
+    if isinstance(cost, list) and cost:
+        cost_credits = int(max(cost))
+    elif isinstance(cost, (int, float)):
+        cost_credits = int(cost)
+
     async with AsyncSessionLocal() as db:
-        await enhance_repo.update(db, task.id, status="processing")
+        await enhance_repo.update(db, task.id, status="processing", cost_credits=cost_credits)
 
     logger.info(
-        "Worker: enhance submitted | id={id} request_id={rid} estimates={est}",
-        id=task.id, rid=request_id, est=estimates,
+        "Worker: enhance submitted | id={id} request_id={rid} cost={cost}",
+        id=task.id, rid=request_id, cost=cost_credits,
     )
 
 

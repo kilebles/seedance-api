@@ -166,6 +166,18 @@ export async function listBatches(): Promise<BatchSummary[]> {
   return res.json();
 }
 
+export interface EnhanceStats {
+  by_resolution: { resolution: string; count: number; total_credits: number }[];
+  total_count: number;
+  total_credits: number;
+}
+
+export async function getEnhanceStats(): Promise<EnhanceStats> {
+  const res = await fetch(`${API_BASE}/generations/enhance/stats`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export async function retryBatchFailed(batchId: string): Promise<{ retried: number }> {
   const res = await fetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/retry-failed`, { method: "POST" });
   if (!res.ok) throw new Error(`API error ${res.status}`);

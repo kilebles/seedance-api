@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search } from "lucide-react";
-import { Task, ImageTask, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, listImageTasks, getImageTask, ContentItem } from "@/lib/api";
+import { Task, ImageTask, EnhanceStats, GenerationRequest, ImageGenerationRequest, submitTask, submitImageTask, listTasks, listImageTasks, getImageTask, getEnhanceStats, ContentItem } from "@/lib/api";
 import GenerateInput from "@/components/GenerateInput";
 import TaskCard from "@/components/TaskCard";
 import BatchTab from "@/components/BatchTab";
@@ -24,6 +24,7 @@ type Tab = "video" | "image" | "batch" | "billing";
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [imageTasks, setImageTasks] = useState<ImageTask[]>([]);
+  const [enhanceStats, setEnhanceStats] = useState<EnhanceStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -39,6 +40,7 @@ export default function Home() {
   useEffect(() => {
     listTasks().then(setTasks).catch(() => {});
     listImageTasks().then(setImageTasks).catch(() => {});
+    getEnhanceStats().then(setEnhanceStats).catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
@@ -358,6 +360,47 @@ export default function Home() {
                 </>
               )}
             </section>
+
+            {/* Topaz billing */}
+            <section>
+              <h2 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-3">Topaz (Upscale)</h2>
+              {!enhanceStats || enhanceStats.total_count === 0 ? (
+                <p className="text-white/20 text-sm">No data yet</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <Stat label="Completed" value={String(enhanceStats.total_count)} />
+                    <Stat label="Total credits" value={enhanceStats.total_credits.toLocaleString()} />
+                    <Stat label="Est. cost" value={`$${(enhanceStats.total_credits * 0.01).toFixed(2)}`} />
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-white/30 text-xs border-b border-white/8">
+                        <th className="text-left pb-2 font-normal">Output</th>
+                        <th className="text-right pb-2 font-normal">Tasks</th>
+                        <th className="text-right pb-2 font-normal">Credits</th>
+                        <th className="text-right pb-2 font-normal">Avg credits</th>
+                        <th className="text-right pb-2 font-normal">Est. cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {enhanceStats.by_resolution.map((r) => (
+                        <tr key={r.resolution} className="border-b border-white/5 text-white/70">
+                          <td className="py-2 pr-3">{r.resolution}</td>
+                          <td className="py-2 text-right">{r.count}</td>
+                          <td className="py-2 text-right">{r.total_credits.toLocaleString()}</td>
+                          <td className="py-2 text-right">{r.count > 0 ? Math.round(r.total_credits / r.count) : "—"}</td>
+                          <td className="py-2 text-right">${(r.total_credits * 0.01).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="text-white/20 text-xs mt-2">1 credit = $0.01 · credits with cost_credits=null not counted</p>
+                </>
+              )}
+            </section>
+
+            <div className="border-t border-white/6" />
 
             {/* Image billing */}
             <section>
