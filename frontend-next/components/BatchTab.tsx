@@ -102,43 +102,43 @@ export default function BatchTab() {
   const allDone = rows.length > 0 && doneCount === rows.length;
 
   // polling
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowsRef = useRef<RowState[]>(rows);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
 
-  const pollAll = useCallback(async (currentRows: RowState[]) => {
-    const pending = currentRows.filter((r) => !TERMINAL.includes(r.status));
-    if (pending.length === 0) return;
+  const scheduleNextPoll = useCallback(() => {
+    pollRef.current = setTimeout(async () => {
+      const current = rowsRef.current;
+      const pending = current.filter((r) => !TERMINAL.includes(r.status));
+      if (pending.length === 0) return;
 
-    const updates = await Promise.allSettled(pending.map((r) => getTask(r.id)));
-    setRows((prev) =>
-      prev.map((row) => {
-        const idx = pending.findIndex((p) => p.id === row.id);
-        if (idx === -1) return row;
-        const res = updates[idx];
-        if (res.status === "fulfilled") {
-          return {
-            ...row,
-            status: res.value.status,
-            error_message: res.value.error_message,
-          };
-        }
-        return row;
-      })
-    );
+      const updates = await Promise.allSettled(pending.map((r) => getTask(r.id)));
+      setRows((prev) =>
+        prev.map((row) => {
+          const idx = pending.findIndex((p) => p.id === row.id);
+          if (idx === -1) return row;
+          const res = updates[idx];
+          if (res.status === "fulfilled") {
+            return { ...row, status: res.value.status, error_message: res.value.error_message };
+          }
+          return row;
+        })
+      );
+
+      // schedule next only if still pending
+      const stillPending = rowsRef.current.filter((r) => !TERMINAL.includes(r.status));
+      if (stillPending.length > 0) scheduleNextPoll();
+    }, POLL_INTERVAL);
   }, []);
 
   useEffect(() => {
     if (!isActive || allDone) {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) clearTimeout(pollRef.current);
       return;
     }
-    pollRef.current = setInterval(() => {
-      setRows((current) => {
-        pollAll(current);
-        return current;
-      });
-    }, POLL_INTERVAL);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [isActive, allDone, pollAll]);
+    scheduleNextPoll();
+    return () => { if (pollRef.current) clearTimeout(pollRef.current); };
+  }, [isActive, allDone, scheduleNextPoll]);
 
   async function handleSubmit() {
     if (!file) return;
