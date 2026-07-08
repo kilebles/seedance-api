@@ -498,44 +498,26 @@ with tab_generate:
 # ── Batch tab ─────────────────────────────────────────────────────────────────
 with tab_batch:
     if "batch_task_ids" not in st.session_state:
-        # ── Form ──────────────────────────────────────────────────────────────
-        b_model = st.selectbox(
-            "Model", VIDEO_MODEL_IDS,
-            format_func=lambda x: VIDEO_MODEL_LABELS[x],
-            index=0, key="b_model",
-        )
-        b_def = _get_model_def(b_model)
-
-        bc1, bc2, bc3 = st.columns(3)
-        with bc1:
-            b_ratio = st.selectbox("Aspect ratio", b_def["ratios"], key="b_ratio")
-        with bc2:
-            b_res_list = b_def["resolutions"]
-            b_resolution = st.selectbox("Resolution", b_res_list, index=min(1, len(b_res_list) - 1), key="b_resolution")
-        with bc3:
-            b_dur_list = b_def["durations"]
-            b_duration = st.selectbox(
-                "Duration (s)", b_dur_list,
-                index=min(4, len(b_dur_list) - 1),
-                format_func=lambda x: f"{x}s",
-                key="b_duration",
-            )
-
-        b_audio = st.checkbox(
-            "Generate audio",
-            value=b_def["supports_audio"],
-            disabled=not b_def["supports_audio"],
-            key="b_audio",
-        )
-        b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
-        b_upscale_res = st.selectbox(
-            "Upscale resolution", ["1080p", "4k"],
-            disabled=not b_upscale, key="b_upscale_res",
-        )
-
-        st.markdown("---")
         st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
         with st.form("batch_form"):
+            b_model = st.selectbox(
+                "Model", VIDEO_MODEL_IDS,
+                format_func=lambda x: VIDEO_MODEL_LABELS[x],
+                index=0, key="b_model",
+            )
+            bc1, bc2, bc3 = st.columns(3)
+            with bc1:
+                b_ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"], key="b_ratio")
+            with bc2:
+                b_resolution = st.selectbox("Resolution", ["480p", "720p", "1080p", "4k"], index=1, key="b_resolution")
+            with bc3:
+                b_duration = st.selectbox(
+                    "Duration (s)", [2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+                    index=6, format_func=lambda x: f"{x}s", key="b_duration",
+                )
+            b_audio = st.checkbox("Generate audio", value=True, key="b_audio")
+            b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
+            b_upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="b_upscale_res")
             xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"], key="b_xlsx")
             batch_submitted = st.form_submit_button("Start batch", type="primary")
 
