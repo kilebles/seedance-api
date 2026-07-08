@@ -285,7 +285,7 @@ with tab_generate:
             g_model = st.selectbox(
                 "Model", VIDEO_MODEL_IDS,
                 format_func=lambda x: VIDEO_MODEL_LABELS[x],
-                index=0, key="g_model",
+                index=2, key="g_model",
             )
             gc1, gc2, gc3 = st.columns(3)
             with gc1:
@@ -481,7 +481,7 @@ with tab_batch:
             b_model = st.selectbox(
                 "Model", VIDEO_MODEL_IDS,
                 format_func=lambda x: VIDEO_MODEL_LABELS[x],
-                index=0, key="b_model",
+                index=2, key="b_model",
             )
             bc1, bc2, bc3 = st.columns(3)
             with bc1:
