@@ -278,8 +278,57 @@ with tab_generate:
         if "generate_tasks" not in st.session_state:
             st.session_state["generate_tasks"] = []
 
+        # Model and dependent settings outside the form so changing model re-renders options
+        video_model = st.selectbox(
+            "Model",
+            VIDEO_MODEL_IDS,
+            format_func=lambda x: VIDEO_MODEL_LABELS[x],
+            index=0,
+            key="g_model",
+        )
+        model_def = _get_model_def(video_model)
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            ratio = st.selectbox("Aspect ratio", model_def["ratios"], key="g_ratio")
+        with col2:
+            res_list = model_def["resolutions"]
+            resolution = st.selectbox("Resolution", res_list, index=min(1, len(res_list) - 1), key="g_resolution")
+        with col3:
+            dur_list = model_def["durations"]
+            duration = st.selectbox(
+                "Duration (s)",
+                dur_list,
+                index=min(4, len(dur_list) - 1),
+                format_func=lambda x: f"{x}s",
+                key="g_duration",
+            )
+
+        generate_audio = st.checkbox(
+            "Generate audio",
+            value=model_def["supports_audio"],
+            disabled=not model_def["supports_audio"],
+            key="g_audio",
+        )
+
+        col_seed1, col_seed2 = st.columns([1, 2])
+        with col_seed1:
+            fixed_seed = st.checkbox(
+                "Fixed seed",
+                value=False,
+                disabled=not model_def["supports_seed"],
+                key="g_fixed_seed",
+            )
+        with col_seed2:
+            seed_value = st.number_input(
+                "Seed", min_value=0, max_value=4294967295, value=0, step=1,
+                disabled=not fixed_seed or not model_def["supports_seed"],
+                label_visibility="collapsed",
+                key="g_seed_value",
+            )
+
         upscale = st.checkbox("Upscale (Topaz)", value=False, key="g_upscale")
-        upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="g_upscale_res")
+        upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="g_upscale_res", disabled=not upscale)
 
         with st.form("generate_form"):
             prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...")
@@ -294,50 +343,6 @@ with tab_generate:
                 uploaded_last = st.file_uploader(
                     "Последний кадр (необязательно)",
                     type=["jpg", "jpeg", "png", "webp"],
-                )
-
-            video_model = st.selectbox(
-                "Model",
-                VIDEO_MODEL_IDS,
-                format_func=lambda x: VIDEO_MODEL_LABELS[x],
-                index=0,
-                key="g_model",
-            )
-            model_def = _get_model_def(video_model)
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                ratio = st.selectbox("Aspect ratio", model_def["ratios"])
-            with col2:
-                res_list = model_def["resolutions"]
-                resolution = st.selectbox("Resolution", res_list, index=min(1, len(res_list) - 1))
-            with col3:
-                dur_list = model_def["durations"]
-                duration = st.selectbox(
-                    "Duration (s)",
-                    dur_list,
-                    index=min(4, len(dur_list) - 1),
-                    format_func=lambda x: f"{x}s",
-                )
-
-            generate_audio = st.checkbox(
-                "Generate audio",
-                value=model_def["supports_audio"],
-                disabled=not model_def["supports_audio"],
-            )
-
-            col_seed1, col_seed2 = st.columns([1, 2])
-            with col_seed1:
-                fixed_seed = st.checkbox(
-                    "Fixed seed",
-                    value=False,
-                    disabled=not model_def["supports_seed"],
-                )
-            with col_seed2:
-                seed_value = st.number_input(
-                    "Seed", min_value=0, max_value=4294967295, value=0, step=1,
-                    disabled=not fixed_seed or not model_def["supports_seed"],
-                    label_visibility="collapsed",
                 )
 
             submitted = st.form_submit_button("Generate video", type="primary")
@@ -708,47 +713,47 @@ with tab_billing:
 with tab_batch:
     st.markdown("Загрузите xlsx-файл с колонками: `number`, `prompt`.")
 
+    # All controls outside the form so model change triggers re-render
+    b_model = st.selectbox(
+        "Model",
+        VIDEO_MODEL_IDS,
+        format_func=lambda x: VIDEO_MODEL_LABELS[x],
+        index=0,
+        key="b_model",
+    )
+    b_model_def = _get_model_def(b_model)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        b_ratio = st.selectbox("Aspect ratio", b_model_def["ratios"], key="b_ratio")
+    with col2:
+        b_res_list = b_model_def["resolutions"]
+        b_resolution = st.selectbox("Resolution", b_res_list, index=min(1, len(b_res_list) - 1), key="b_resolution")
+    with col3:
+        b_dur_list = b_model_def["durations"]
+        b_duration = st.selectbox(
+            "Duration (s)",
+            b_dur_list,
+            index=min(4, len(b_dur_list) - 1),
+            format_func=lambda x: f"{x}s",
+            key="b_duration",
+        )
+    b_audio = st.checkbox(
+        "Generate audio",
+        value=b_model_def["supports_audio"],
+        disabled=not b_model_def["supports_audio"],
+        key="b_audio",
+    )
     b_upscale = st.checkbox("Upscale (Topaz)", value=False, key="b_upscale")
     b_upscale_res = st.selectbox(
         "Upscale resolution",
         ["1080p", "4k"],
         key="b_upscale_res",
+        disabled=not b_upscale,
     )
 
     with st.form("batch_form"):
         xlsx_file = st.file_uploader("xlsx-файл", type=["xlsx"])
-
-        b_model = st.selectbox(
-            "Model",
-            VIDEO_MODEL_IDS,
-            format_func=lambda x: VIDEO_MODEL_LABELS[x],
-            index=0,
-            key="b_model",
-        )
-        b_model_def = _get_model_def(b_model)
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            b_ratio = st.selectbox("Aspect ratio", b_model_def["ratios"], key="b_ratio")
-        with col2:
-            b_res_list = b_model_def["resolutions"]
-            b_resolution = st.selectbox("Resolution", b_res_list, index=min(1, len(b_res_list) - 1), key="b_resolution")
-        with col3:
-            b_dur_list = b_model_def["durations"]
-            b_duration = st.selectbox(
-                "Duration (s)",
-                b_dur_list,
-                index=min(4, len(b_dur_list) - 1),
-                format_func=lambda x: f"{x}s",
-                key="b_duration",
-            )
-        b_audio = st.checkbox(
-            "Generate audio",
-            value=b_model_def["supports_audio"],
-            disabled=not b_model_def["supports_audio"],
-            key="b_audio",
-        )
-
         batch_submitted = st.form_submit_button("Start batch", type="primary")
 
     if batch_submitted:
