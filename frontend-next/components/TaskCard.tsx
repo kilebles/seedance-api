@@ -123,7 +123,7 @@ export default function TaskCard({ task: initial, onUpdate }: Props) {
   const res = task.resolution_actual ?? task.resolution_requested;
   const ratio = task.ratio_actual ?? task.ratio_requested;
   const dur = task.duration_actual ?? task.duration_requested;
-  const upscale = task.upscale_resolution;
+  const upscale = task.upscale_done ? task.upscale_resolution : null;
 
   const meta = [res, ratio, dur ? `${dur}s` : null, upscale ? `→${upscale}` : null]
     .filter(Boolean)

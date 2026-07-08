@@ -119,7 +119,26 @@ async def read_task(
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    return TaskDB.model_validate(task)
+    return await _task_to_db(db, task)
+
+
+async def _task_to_db(db: AsyncSession, task) -> TaskDB:
+    """Convert ORM task to TaskDB, filling upscale_done from enhance_tasks."""
+    from sqlalchemy import select
+    from src.models.enhance import EnhanceTask
+    upscale_done = False
+    if task.upscale_resolution:
+        result = await db.execute(
+            select(EnhanceTask.status)
+            .where(EnhanceTask.generation_task_id == task.id)
+            .order_by(EnhanceTask.created_at.desc())
+            .limit(1)
+        )
+        enhance_status = result.scalar_one_or_none()
+        upscale_done = enhance_status == "complete"
+    out = TaskDB.model_validate(task)
+    out.upscale_done = upscale_done
+    return out
 
 
 @router.get(
@@ -131,15 +150,37 @@ async def list_tasks(
     batch_id: str | None = Query(default=None, description="Filter by batch_id"),
     db: AsyncSession = Depends(get_db),
 ) -> list[TaskDB]:
-    from sqlalchemy import select
+    from sqlalchemy import select, outerjoin
     from src.models.generation import GenerationTask
-    q = select(GenerationTask)
+    from src.models.enhance import EnhanceTask
+
+    # Subquery: latest enhance status per generation task
+    latest_enhance = (
+        select(
+            EnhanceTask.generation_task_id,
+            EnhanceTask.status.label("enhance_status"),
+        )
+        .distinct(EnhanceTask.generation_task_id)
+        .order_by(EnhanceTask.generation_task_id, EnhanceTask.created_at.desc())
+        .subquery()
+    )
+
+    q = (
+        select(GenerationTask, latest_enhance.c.enhance_status)
+        .outerjoin(latest_enhance, latest_enhance.c.generation_task_id == GenerationTask.id)
+    )
     if batch_id:
         q = q.where(GenerationTask.batch_id == batch_id)
     q = q.order_by(GenerationTask.created_at.desc())
     result = await db.execute(q)
-    tasks = result.scalars().all()
-    return [TaskDB.model_validate(t) for t in tasks]
+    rows = result.all()
+
+    out = []
+    for task, enhance_status in rows:
+        t = TaskDB.model_validate(task)
+        t.upscale_done = (enhance_status == "complete") if task.upscale_resolution else False
+        out.append(t)
+    return out
 
 
 @router.post(

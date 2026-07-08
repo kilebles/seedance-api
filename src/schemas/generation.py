@@ -141,3 +141,4 @@ class TaskDB(BaseModel):
 
     # upscale
     upscale_resolution: str | None = None
+    upscale_done: bool = False  # True when enhance task is complete

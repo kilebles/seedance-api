@@ -86,6 +86,7 @@ export interface Task {
   error_code: string | null;
   error_message: string | null;
   upscale_resolution: string | null;
+  upscale_done: boolean;
   name: string | null;
   batch_id: string | null;
 }
