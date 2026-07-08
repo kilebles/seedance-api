@@ -148,6 +148,24 @@ export async function listBatchTasks(batchId: string): Promise<Task[]> {
   return res.json();
 }
 
+export interface BatchSummary {
+  batch_id: string;
+  name: string;
+  total: number;
+  done: number;
+  failed: number;
+  created_at: string | null;
+  model: string | null;
+  resolution: string | null;
+  upscale_resolution: string | null;
+}
+
+export async function listBatches(): Promise<BatchSummary[]> {
+  const res = await fetch(`${API_BASE}/generations/batches`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
 export interface BatchTask {
   id: string;
   name: string;

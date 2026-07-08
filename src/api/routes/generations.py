@@ -142,6 +142,60 @@ async def list_tasks(
     return [TaskDB.model_validate(t) for t in tasks]
 
 
+@router.get(
+    "/batches",
+    summary="List all batches (grouped by batch_id)",
+)
+async def list_batches(db: AsyncSession = Depends(get_db)) -> list[dict]:
+    from sqlalchemy import select, func as sqlfunc, case
+    from src.models.generation import GenerationTask
+    TERMINAL = ("succeeded", "failed", "expired", "cancelled")
+    done_case = case(
+        *[(GenerationTask.status.in_(TERMINAL), 1)],
+        else_=0,
+    )
+    failed_case = case(
+        *[(GenerationTask.status == "failed", 1)],
+        else_=0,
+    )
+    q = (
+        select(
+            GenerationTask.batch_id,
+            sqlfunc.min(GenerationTask.local_path).label("local_path"),
+            sqlfunc.count().label("total"),
+            sqlfunc.sum(done_case).label("done"),
+            sqlfunc.sum(failed_case).label("failed"),
+            sqlfunc.min(GenerationTask.created_at).label("created_at"),
+            sqlfunc.min(GenerationTask.model).label("model"),
+            sqlfunc.min(GenerationTask.resolution_requested).label("resolution"),
+            sqlfunc.min(GenerationTask.upscale_resolution).label("upscale_resolution"),
+        )
+        .where(GenerationTask.batch_id.isnot(None))
+        .group_by(GenerationTask.batch_id)
+        .order_by(sqlfunc.min(GenerationTask.created_at).desc())
+    )
+    result = await db.execute(q)
+    rows = result.mappings().all()
+    out = []
+    for r in rows:
+        # derive display name from local_path: "output/batch/SeeDance_xxx_720p/1.mp4" → "SeeDance_xxx_720p"
+        lp = r["local_path"] or ""
+        parts = lp.replace("\\", "/").split("/")
+        dir_name = parts[2] if len(parts) >= 3 else r["batch_id"]
+        out.append({
+            "batch_id": r["batch_id"],
+            "name": dir_name,
+            "total": r["total"],
+            "done": int(r["done"] or 0),
+            "failed": int(r["failed"] or 0),
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "model": r["model"],
+            "resolution": r["resolution"],
+            "upscale_resolution": r["upscale_resolution"],
+        })
+    return out
+
+
 @router.delete(
     "/tasks/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,

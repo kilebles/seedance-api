@@ -28,8 +28,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useLocalStorage<"newest" | "oldest">("sd_sort", "newest");
-  const [showFailed, setShowFailed] = useLocalStorage("sd_show_failed", false);
-  const [showExpired, setShowExpired] = useLocalStorage("sd_show_expired", false);
+  const [statusFilter, setStatusFilter] = useLocalStorage<string | null>("sd_status_filter", null);
   const [tab, setTab] = useLocalStorage<Tab>("sd_tab", "video");
 
   const [generateMode, setGenerateMode] = useLocalStorage<GenerateMode>("sd_generate_mode", "video");
@@ -45,8 +44,11 @@ export default function Home() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = tasks.filter((t) => {
-      if (t.status === "failed" && !showFailed) return false;
-      if (isExpired(t) && !showExpired) return false;
+      if (statusFilter === "expired") return isExpired(t);
+      if (statusFilter) return t.status === statusFilter;
+      // default: hide failed and expired
+      if (t.status === "failed") return false;
+      if (isExpired(t)) return false;
       return true;
     });
     if (q) list = list.filter((t) => getPrompt(t.content_items).toLowerCase().includes(q));
@@ -55,12 +57,13 @@ export default function Home() {
       return sort === "newest" ? -diff : diff;
     });
     return list;
-  }, [tasks, search, sort, showFailed, showExpired]);
+  }, [tasks, search, sort, statusFilter]);
 
   const filteredImages = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = imageTasks.filter((t) => {
-      if (t.status === "failed" && !showFailed) return false;
+      if (statusFilter && statusFilter !== "expired") return t.status === statusFilter;
+      if (t.status === "failed" && !statusFilter) return false;
       return true;
     });
     if (q) list = list.filter((t) => t.prompt.toLowerCase().includes(q));
@@ -69,7 +72,7 @@ export default function Home() {
       return sort === "newest" ? -diff : diff;
     });
     return list;
-  }, [imageTasks, search, sort, showFailed]);
+  }, [imageTasks, search, sort, statusFilter]);
 
   const [videoModel, setVideoModel] = useLocalStorage("sd_video_model", "dreamina-seedance-2-0-260128");
   const [ratio, setRatio] = useLocalStorage("sd_ratio", "16:9");
@@ -211,22 +214,22 @@ export default function Home() {
               />
             </div>
 
-            {(["failed", "expired"] as const).map((key) => {
-              if (key === "expired" && tab === "image") return null;
-              const checked = key === "failed" ? showFailed : showExpired;
-              const toggle = key === "failed" ? setShowFailed : setShowExpired;
-              return (
-                <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => toggle(e.target.checked)}
-                    className="accent-white w-3.5 h-3.5"
-                  />
-                  <span className="text-xs text-white/40">{key === "failed" ? "Failed" : "Expired"}</span>
-                </label>
-              );
-            })}
+            {(tab === "video"
+              ? ["running", "queued", "succeeded", "failed", "cancelled", "expired"] as const
+              : ["succeeded", "failed"] as const
+            ).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(statusFilter === s ? null : s)}
+                className={`px-2.5 py-1 rounded-full text-xs transition-colors ${
+                  statusFilter === s
+                    ? "bg-white/20 text-white"
+                    : "text-white/30 hover:text-white/55"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
 
             <div className="flex gap-1 bg-white/5 rounded-xl p-1">
               {(["newest", "oldest"] as const).map((s) => (
