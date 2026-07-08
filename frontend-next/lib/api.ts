@@ -86,6 +86,8 @@ export interface Task {
   error_code: string | null;
   error_message: string | null;
   upscale_resolution: string | null;
+  name: string | null;
+  batch_id: string | null;
 }
 
 export interface ContentItem {
@@ -136,6 +138,12 @@ export async function getTask(id: string): Promise<Task> {
 
 export async function listTasks(): Promise<Task[]> {
   const res = await fetch(`${API_BASE}/generations/tasks`);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+export async function listBatchTasks(batchId: string): Promise<Task[]> {
+  const res = await fetch(`${API_BASE}/generations/tasks?batch_id=${encodeURIComponent(batchId)}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }

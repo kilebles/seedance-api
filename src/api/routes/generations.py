@@ -127,10 +127,17 @@ async def read_task(
     response_model=list[TaskDB],
     summary="List all generation tasks",
 )
-async def list_tasks(db: AsyncSession = Depends(get_db)) -> list[TaskDB]:
+async def list_tasks(
+    batch_id: str | None = Query(default=None, description="Filter by batch_id"),
+    db: AsyncSession = Depends(get_db),
+) -> list[TaskDB]:
     from sqlalchemy import select
     from src.models.generation import GenerationTask
-    result = await db.execute(select(GenerationTask).order_by(GenerationTask.created_at.desc()))
+    q = select(GenerationTask)
+    if batch_id:
+        q = q.where(GenerationTask.batch_id == batch_id)
+    q = q.order_by(GenerationTask.created_at.desc())
+    result = await db.execute(q)
     tasks = result.scalars().all()
     return [TaskDB.model_validate(t) for t in tasks]
 

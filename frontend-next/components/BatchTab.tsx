@@ -2,10 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Upload, X, Square } from "lucide-react";
-import { BatchTask, submitBatch, cancelTasksBulk, getTask, TaskStatus } from "@/lib/api";
+import { Task, submitBatch, cancelTasksBulk, listBatchTasks, TaskStatus } from "@/lib/api";
 import { VIDEO_MODELS, VideoModelDef } from "@/components/Settings";
 
 const UPSCALE_OPTIONS = ["1080p", "4k"];
+const POLL_INTERVAL = 4000;
+const STORAGE_KEY = "batch_id";
 
 function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -40,16 +42,7 @@ const STATUS_DOT: Record<string, string> = {
   cancelled: "bg-white/20",
 };
 
-interface RowState {
-  id: string;
-  name: string;
-  prompt: string;
-  status: TaskStatus;
-  error_message: string | null;
-}
-
 const TERMINAL: TaskStatus[] = ["succeeded", "failed", "expired", "cancelled"];
-const POLL_INTERVAL = 4000;
 
 export default function BatchTab() {
   // settings
@@ -91,54 +84,64 @@ export default function BatchTab() {
   }
 
   // batch state
-  const [rows, setRows] = useState<RowState[]>([]);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [rows, setRows] = useState<Task[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const isActive = rows.length > 0;
+  const isActive = batchId !== null;
   const doneCount = rows.filter((r) => TERMINAL.includes(r.status)).length;
   const progress = rows.length > 0 ? doneCount / rows.length : 0;
   const allDone = rows.length > 0 && doneCount === rows.length;
 
   // polling
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rowsRef = useRef<RowState[]>(rows);
-  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  const batchIdRef = useRef<string | null>(null);
+  useEffect(() => { batchIdRef.current = batchId; }, [batchId]);
 
   const scheduleNextPoll = useCallback(() => {
     pollRef.current = setTimeout(async () => {
-      const current = rowsRef.current;
-      const pending = current.filter((r) => !TERMINAL.includes(r.status));
-      if (pending.length === 0) return;
-
-      const updates = await Promise.allSettled(pending.map((r) => getTask(r.id)));
-      setRows((prev) =>
-        prev.map((row) => {
-          const idx = pending.findIndex((p) => p.id === row.id);
-          if (idx === -1) return row;
-          const res = updates[idx];
-          if (res.status === "fulfilled") {
-            return { ...row, status: res.value.status, error_message: res.value.error_message };
-          }
-          return row;
-        })
-      );
-
-      // schedule next only if still pending
-      const stillPending = rowsRef.current.filter((r) => !TERMINAL.includes(r.status));
-      if (stillPending.length > 0) scheduleNextPoll();
+      const currentBatchId = batchIdRef.current;
+      if (!currentBatchId) return;
+      try {
+        const tasks = await listBatchTasks(currentBatchId);
+        setRows(tasks);
+        const stillPending = tasks.filter((r) => !TERMINAL.includes(r.status));
+        if (stillPending.length > 0) scheduleNextPoll();
+      } catch {
+        scheduleNextPoll();
+      }
     }, POLL_INTERVAL);
   }, []);
 
+  // restore from localStorage on mount
   useEffect(() => {
-    if (!isActive || allDone) {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    setLoading(true);
+    setBatchId(saved);
+    batchIdRef.current = saved;
+    listBatchTasks(saved)
+      .then((tasks) => {
+        setRows(tasks);
+      })
+      .catch(() => {
+        localStorage.removeItem(STORAGE_KEY);
+        setBatchId(null);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || allDone || loading) {
       if (pollRef.current) clearTimeout(pollRef.current);
       return;
     }
     scheduleNextPoll();
     return () => { if (pollRef.current) clearTimeout(pollRef.current); };
-  }, [isActive, allDone, scheduleNextPoll]);
+  }, [isActive, allDone, loading, scheduleNextPoll]);
 
   async function handleSubmit() {
     if (!file) return;
@@ -150,14 +153,32 @@ export default function BatchTab() {
         ...(upscaleResolution ? { upscale_resolution: upscaleResolution } : {}),
       });
 
-      // parse prompts from xlsx client-side is complex — store what API returns
-      setRows(tasks.map((t) => ({
-        id: t.id,
-        name: t.name,
-        prompt: "",
-        status: t.status,
-        error_message: t.error_message,
-      })));
+      if (tasks.length === 0) {
+        setSubmitError("No tasks returned from server");
+        return;
+      }
+
+      // All tasks in a batch share the same batch_id — read from first task
+      // The API returns Task objects which include batch_id... but BatchTask doesn't.
+      // We need to call listTasks after submit to get the batch_id.
+      // Instead, let's use the submit response: tasks come with batch_id via TaskDB.
+      // Actually, BatchTask interface doesn't expose batch_id. We'll fetch by task id list.
+      // Best: fetch GET /generations/tasks/{id} to get batch_id from first task.
+      const { getTask } = await import("@/lib/api");
+      const first = await getTask(tasks[0].id);
+      const bid = first.batch_id ?? null;
+
+      if (bid) {
+        localStorage.setItem(STORAGE_KEY, bid);
+        setBatchId(bid);
+        batchIdRef.current = bid;
+        // Fetch all tasks for this batch
+        const allTasks = await listBatchTasks(bid);
+        setRows(allTasks);
+      } else {
+        // Fallback: store tasks directly without batch_id polling
+        setRows(tasks as unknown as Task[]);
+      }
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -171,9 +192,11 @@ export default function BatchTab() {
     setStopping(true);
     try {
       await cancelTasksBulk(cancellable);
-      setRows((prev) => prev.map((r) =>
-        cancellable.includes(r.id) ? { ...r, status: "cancelled" } : r
-      ));
+      // refresh from server
+      if (batchId) {
+        const tasks = await listBatchTasks(batchId);
+        setRows(tasks);
+      }
     } catch {
       // ignore
     } finally {
@@ -182,9 +205,21 @@ export default function BatchTab() {
   }
 
   function handleReset() {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    localStorage.removeItem(STORAGE_KEY);
+    setBatchId(null);
+    batchIdRef.current = null;
     setRows([]);
     setFile(null);
     setSubmitError(null);
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto py-4 flex items-center justify-center h-40">
+        <span className="text-white/30 text-sm">Loading batch...</span>
+      </div>
+    );
   }
 
   return (
@@ -335,7 +370,7 @@ export default function BatchTab() {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id} className="border-b border-white/5 last:border-0">
-                    <td className="px-4 py-2.5 text-white/50 font-mono text-xs">{row.name}</td>
+                    <td className="px-4 py-2.5 text-white/50 font-mono text-xs">{row.name ?? row.id.slice(0, 8)}</td>
                     <td className="px-4 py-2.5">
                       <span className="flex items-center gap-2">
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[row.status] ?? "bg-white/20"}`} />
