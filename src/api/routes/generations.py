@@ -245,6 +245,54 @@ async def batch_upscale(
     return {"queued": len(tasks), "resolution": resolution}
 
 
+@router.get(
+    "/batches/{batch_id}/download",
+    summary="Download all succeeded videos in a batch as a zip archive",
+)
+async def download_batch(
+    batch_id: str = Path(...),
+    name: str = Query(default="batch", description="Archive filename (without .zip)"),
+    db: AsyncSession = Depends(get_db),
+):
+    import io
+    import zipfile
+    from sqlalchemy import select as sa_select
+    from src.models.generation import GenerationTask
+    from fastapi.responses import Response
+
+    result = await db.execute(
+        sa_select(GenerationTask.name, GenerationTask.video_url)
+        .where(GenerationTask.batch_id == batch_id)
+        .where(GenerationTask.status == "succeeded")
+        .where(GenerationTask.video_url.isnot(None))
+        .order_by(GenerationTask.batch_order.asc().nullsfirst(), GenerationTask.name.asc())
+    )
+    rows = result.all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="No succeeded videos in this batch")
+
+    buf = io.BytesIO()
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            for task_name, video_url in rows:
+                filename = f"{task_name}.mp4" if task_name else "video.mp4"
+                try:
+                    resp = await client.get(video_url)
+                    resp.raise_for_status()
+                    zf.writestr(filename, resp.content)
+                except Exception as exc:
+                    logger.warning("download_batch: skipping {f} — {exc}", f=filename, exc=exc)
+
+    safe_name = name.replace("/", "_").replace("..", "_")
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+    )
+
+
 @router.delete(
     "/batches/{batch_id}",
     status_code=status.HTTP_204_NO_CONTENT,

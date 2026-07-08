@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, X, Square, ChevronLeft, Plus, Trash2 } from "lucide-react";
+import { Upload, X, Square, ChevronLeft, Plus, Trash2, Download } from "lucide-react";
 import {
   Task, BatchSummary,
   submitBatch, cancelTasksBulk, listBatchTasks, listBatches, retryBatchFailed, getTask,
-  deleteBatch,
+  deleteBatch, downloadBatch,
   TaskStatus,
 } from "@/lib/api";
 import { VIDEO_MODELS, VideoModelDef } from "@/components/Settings";
@@ -102,15 +102,18 @@ function BatchList({
           {batches.map((b) => {
             const progress = b.total > 0 ? b.done / b.total : 0;
             const allDone = b.done === b.total;
+            const canDownload = allDone && (b.done - b.failed) > 0;
             const date = b.created_at
               ? new Date(b.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
               : "";
 
             if (confirmId === b.batch_id) {
               return (
-                <div key={b.batch_id} className="bg-white/3 rounded-2xl p-4 space-y-3">
-                  <p className="text-sm text-white/70">Delete <span className="font-medium">{b.name}</span>?</p>
-                  <p className="text-xs text-white/30">All {b.total} tasks will be permanently removed.</p>
+                <div key={b.batch_id} className="bg-white/3 rounded-2xl p-5 space-y-3 flex flex-col justify-between min-h-[140px]">
+                  <div className="space-y-1.5">
+                    <p className="text-sm text-white/70">Delete <span className="font-medium">{b.name}</span>?</p>
+                    <p className="text-xs text-white/30">All {b.total} tasks will be permanently removed.</p>
+                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => setConfirmId(null)}
@@ -131,13 +134,14 @@ function BatchList({
             }
 
             return (
-              <div key={b.batch_id} className="group relative">
+              <div key={b.batch_id} className="group bg-white/3 hover:bg-white/5 rounded-2xl transition-colors flex flex-col">
+                {/* Clickable main area */}
                 <button
                   onClick={() => onSelect(b)}
-                  className="w-full text-left bg-white/3 hover:bg-white/6 rounded-2xl p-4 transition-colors space-y-3"
+                  className="flex-1 text-left p-5 pb-3 space-y-3"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-white/80 font-medium truncate leading-tight">{b.name}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm text-white/80 font-medium leading-snug">{b.name}</p>
                     <span className="text-xs text-white/25 shrink-0 mt-0.5">{date}</span>
                   </div>
                   <div className="w-full h-0.5 bg-white/8 rounded-full overflow-hidden">
@@ -153,13 +157,29 @@ function BatchList({
                     {b.upscale_resolution && <span>→{b.upscale_resolution}</span>}
                   </div>
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmId(b.batch_id); }}
-                  className="absolute top-3 right-3 w-7 h-7 rounded-lg flex items-center justify-center text-white/0 group-hover:text-white/30 hover:!text-red-400 hover:bg-white/8 transition-colors"
-                  title="Delete batch"
-                >
-                  <Trash2 size={13} />
-                </button>
+
+                {/* Action row — visible on hover */}
+                <div className="px-5 pb-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                  {canDownload ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); downloadBatch(b.batch_id, b.name); }}
+                      className="flex items-center gap-1.5 text-xs text-white/35 hover:text-white/70 transition-colors"
+                      title="Download as zip"
+                    >
+                      <Download size={12} />
+                      Download
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setConfirmId(b.batch_id); }}
+                    className="flex items-center gap-1 text-xs text-white/25 hover:text-red-400 transition-colors"
+                    title="Delete batch"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </div>
             );
           })}

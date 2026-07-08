@@ -192,6 +192,16 @@ export async function batchUpscale(batchId: string, resolution: string): Promise
   return res.json();
 }
 
+export function downloadBatch(batchId: string, name: string): void {
+  const url = `${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/download?name=${encodeURIComponent(name)}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export async function deleteBatch(batchId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`API error ${res.status}`);
