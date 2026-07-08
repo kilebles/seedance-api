@@ -281,59 +281,33 @@ with tab_generate:
         if "generate_tasks" not in st.session_state:
             st.session_state["generate_tasks"] = []
 
-        g_model = st.selectbox(
-            "Model",
-            VIDEO_MODEL_IDS,
-            format_func=lambda x: VIDEO_MODEL_LABELS[x],
-            index=0,
-            key="g_model",
-        )
-        g_model_def = _get_model_def(g_model)
-
-        gc1, gc2, gc3 = st.columns(3)
-        with gc1:
-            g_ratio = st.selectbox("Aspect ratio", g_model_def["ratios"], key="g_ratio")
-        with gc2:
-            g_res_list = g_model_def["resolutions"]
-            g_resolution = st.selectbox("Resolution", g_res_list, index=min(1, len(g_res_list) - 1), key="g_resolution")
-        with gc3:
-            g_dur_list = g_model_def["durations"]
-            g_duration = st.selectbox(
-                "Duration (s)", g_dur_list,
-                index=min(4, len(g_dur_list) - 1),
-                format_func=lambda x: f"{x}s",
-                key="g_duration",
-            )
-
-        g_audio = st.checkbox(
-            "Generate audio",
-            value=g_model_def["supports_audio"],
-            disabled=not g_model_def["supports_audio"],
-            key="g_audio",
-        )
-
-        gs1, gs2 = st.columns([1, 2])
-        with gs1:
-            g_fixed_seed = st.checkbox(
-                "Fixed seed", value=False,
-                disabled=not g_model_def["supports_seed"],
-                key="g_fixed_seed",
-            )
-        with gs2:
-            g_seed_val = st.number_input(
-                "Seed", min_value=0, max_value=4294967295, value=0, step=1,
-                disabled=not g_fixed_seed or not g_model_def["supports_seed"],
-                label_visibility="collapsed",
-                key="g_seed_val",
-            )
-
-        g_upscale = st.checkbox("Upscale (Topaz)", value=False, key="g_upscale")
-        g_upscale_res = st.selectbox(
-            "Upscale resolution", ["1080p", "4k"],
-            disabled=not g_upscale, key="g_upscale_res",
-        )
-
         with st.form("generate_form"):
+            g_model = st.selectbox(
+                "Model", VIDEO_MODEL_IDS,
+                format_func=lambda x: VIDEO_MODEL_LABELS[x],
+                index=0, key="g_model",
+            )
+            gc1, gc2, gc3 = st.columns(3)
+            with gc1:
+                g_ratio = st.selectbox("Aspect ratio", ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"], key="g_ratio")
+            with gc2:
+                g_resolution = st.selectbox("Resolution", ["480p", "720p", "1080p", "4k"], index=1, key="g_resolution")
+            with gc3:
+                g_duration = st.selectbox(
+                    "Duration (s)", [2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+                    index=6, format_func=lambda x: f"{x}s", key="g_duration",
+                )
+            g_audio = st.checkbox("Generate audio", value=True, key="g_audio")
+            gs1, gs2 = st.columns([1, 2])
+            with gs1:
+                g_fixed_seed = st.checkbox("Fixed seed", value=False, key="g_fixed_seed")
+            with gs2:
+                g_seed_val = st.number_input(
+                    "Seed", min_value=0, max_value=4294967295, value=0, step=1,
+                    label_visibility="collapsed", key="g_seed_val",
+                )
+            g_upscale = st.checkbox("Upscale (Topaz)", value=False, key="g_upscale")
+            g_upscale_res = st.selectbox("Upscale resolution", ["1080p", "4k"], key="g_upscale_res")
             g_prompt = st.text_area("Prompt", height=100, placeholder="Опишите видео...", key="g_prompt")
             gi1, gi2 = st.columns(2)
             with gi1:
