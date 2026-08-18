@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Task, getTask, ContentItem, upscaleTask } from "@/lib/api";
+import { authHeader } from "@/lib/auth";
 
 interface Props {
   task: Task;
@@ -24,10 +25,11 @@ function VideoThumbnail({ src }: { src: string }) {
   useEffect(() => {
     const proxySrc = `${API_BASE}/generations/proxy?url=${encodeURIComponent(src)}`;
     const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
     video.muted = true;
     video.preload = "metadata";
-    video.src = proxySrc;
+
+    let objectUrl: string | null = null;
+    let cancelled = false;
 
     const capture = () => {
       video.currentTime = 0.01;
@@ -44,19 +46,35 @@ function VideoThumbnail({ src }: { src: string }) {
           setThumbnail(canvas.toDataURL("image/jpeg", 0.8));
         }
       } catch {
-        // CORS blocked — leave thumbnail null, show grey
+        // leave thumbnail null, show grey
       }
       video.src = "";
     };
 
     video.addEventListener("loadedmetadata", capture);
     video.addEventListener("seeked", draw);
-    video.load();
+
+    fetch(proxySrc, { headers: authHeader() })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Proxy fetch failed ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        video.src = objectUrl;
+        video.load();
+      })
+      .catch(() => {
+        // leave thumbnail null, show grey
+      });
 
     return () => {
+      cancelled = true;
       video.removeEventListener("loadedmetadata", capture);
       video.removeEventListener("seeked", draw);
       video.src = "";
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [src]);
 

@@ -1,4 +1,12 @@
+import { authHeader, clearAuthToken } from "./auth";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const res = await fetch(input, { ...init, headers: { ...init.headers, ...authHeader() } });
+  if (res.status === 401) clearAuthToken();
+  return res;
+}
 
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "expired" | "cancelled";
 
@@ -29,19 +37,19 @@ export interface ImageGenerationRequest {
 }
 
 export async function getImageTask(id: string): Promise<ImageTask> {
-  const res = await fetch(`${API_BASE}/images/tasks/${id}`);
+  const res = await apiFetch(`${API_BASE}/images/tasks/${id}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
 export async function listImageTasks(): Promise<ImageTask[]> {
-  const res = await fetch(`${API_BASE}/images/tasks`);
+  const res = await apiFetch(`${API_BASE}/images/tasks`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
 export async function submitImageTask(req: ImageGenerationRequest): Promise<ImageTask> {
-  const res = await fetch(`${API_BASE}/images/tasks`, {
+  const res = await apiFetch(`${API_BASE}/images/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -112,7 +120,7 @@ export interface GenerationRequest {
 }
 
 export async function submitTask(req: GenerationRequest): Promise<Task> {
-  const res = await fetch(`${API_BASE}/generations/tasks`, {
+  const res = await apiFetch(`${API_BASE}/generations/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
@@ -132,19 +140,19 @@ export async function submitTask(req: GenerationRequest): Promise<Task> {
 }
 
 export async function getTask(id: string): Promise<Task> {
-  const res = await fetch(`${API_BASE}/generations/tasks/${id}`);
+  const res = await apiFetch(`${API_BASE}/generations/tasks/${id}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
 export async function listTasks(): Promise<Task[]> {
-  const res = await fetch(`${API_BASE}/generations/tasks`);
+  const res = await apiFetch(`${API_BASE}/generations/tasks`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
 export async function listBatchTasks(batchId: string): Promise<Task[]> {
-  const res = await fetch(`${API_BASE}/generations/tasks?batch_id=${encodeURIComponent(batchId)}`);
+  const res = await apiFetch(`${API_BASE}/generations/tasks?batch_id=${encodeURIComponent(batchId)}`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
@@ -162,7 +170,7 @@ export interface BatchSummary {
 }
 
 export async function listBatches(): Promise<BatchSummary[]> {
-  const res = await fetch(`${API_BASE}/generations/batches`);
+  const res = await apiFetch(`${API_BASE}/generations/batches`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
@@ -174,13 +182,13 @@ export interface EnhanceStats {
 }
 
 export async function getEnhanceStats(): Promise<EnhanceStats> {
-  const res = await fetch(`${API_BASE}/generations/enhance/stats`);
+  const res = await apiFetch(`${API_BASE}/generations/enhance/stats`);
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
 export async function batchUpscale(batchId: string, resolution: string): Promise<{ queued: number; resolution: string }> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/upscale?resolution=${encodeURIComponent(resolution)}`,
     { method: "POST" }
   );
@@ -194,7 +202,7 @@ export async function batchUpscale(batchId: string, resolution: string): Promise
 
 export async function downloadBatch(batchId: string, name: string): Promise<void> {
   const url = `${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/download?name=${encodeURIComponent(name)}`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`Download failed ${res.status}`);
   const blob = await res.blob();
   const objectUrl = URL.createObjectURL(blob);
@@ -208,12 +216,12 @@ export async function downloadBatch(batchId: string, name: string): Promise<void
 }
 
 export async function deleteBatch(batchId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}`, { method: "DELETE" });
+  const res = await apiFetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`API error ${res.status}`);
 }
 
 export async function upscaleTask(taskId: string, resolution: string): Promise<{ queued: number; resolution: string }> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/generations/tasks/${taskId}/upscale?resolution=${encodeURIComponent(resolution)}`,
     { method: "POST" }
   );
@@ -226,7 +234,7 @@ export async function upscaleTask(taskId: string, resolution: string): Promise<{
 }
 
 export async function retryBatchFailed(batchId: string): Promise<{ retried: number }> {
-  const res = await fetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/retry-failed`, { method: "POST" });
+  const res = await apiFetch(`${API_BASE}/generations/batches/${encodeURIComponent(batchId)}/retry-failed`, { method: "POST" });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
@@ -259,7 +267,7 @@ export async function submitBatch(
   form.append("generate_audio", String(params.generate_audio).toLowerCase());
   if (params.upscale_resolution) form.append("upscale_resolution", params.upscale_resolution);
 
-  const res = await fetch(`${API_BASE}/generations/batch`, { method: "POST", body: form });
+  const res = await apiFetch(`${API_BASE}/generations/batch`, { method: "POST", body: form });
   if (!res.ok) {
     const text = await res.text();
     try {
@@ -275,7 +283,7 @@ export async function submitBatch(
 }
 
 export async function cancelTasksBulk(taskIds: string[]): Promise<{ cancelled: number; skipped: number }> {
-  const res = await fetch(`${API_BASE}/generations/tasks/cancel-bulk`, {
+  const res = await apiFetch(`${API_BASE}/generations/tasks/cancel-bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ task_ids: taskIds }),
@@ -296,7 +304,7 @@ export function toDataUri(file: File): Promise<string> {
 export async function uploadFile(file: File): Promise<string> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_BASE}/uploads`, { method: "POST", body: form });
+  const res = await apiFetch(`${API_BASE}/uploads`, { method: "POST", body: form });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Upload failed ${res.status}: ${text}`);
