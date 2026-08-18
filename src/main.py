@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -13,6 +13,7 @@ from src.api.routes.generations import router as generations_router
 from src.api.routes.batch import router as batch_router
 from src.api.routes.uploads import router as uploads_router
 from src.api.routes.images import router as images_router
+from src.core.auth import require_admin
 from src.core.database import AsyncSessionLocal, engine
 from src.core.logging import setup_logging
 from src.core.settings import settings
@@ -76,10 +77,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(generations_router)
-app.include_router(batch_router)
+app.include_router(generations_router, dependencies=[Depends(require_admin)])
+app.include_router(batch_router, dependencies=[Depends(require_admin)])
 app.include_router(uploads_router)
-app.include_router(images_router)
+app.include_router(images_router, dependencies=[Depends(require_admin)])
 
 _NOISY_PATHS = {"/docs", "/openapi.json", "/redoc", "/health"}
 

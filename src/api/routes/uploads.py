@@ -3,10 +3,11 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from loguru import logger
 
+from src.core.auth import require_admin
 from src.core.settings import settings
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -18,7 +19,7 @@ _ALLOWED = {"video/mp4", "video/webm", "video/quicktime", "image/jpeg", "image/p
 _MAX_SIZE = 500 * 1024 * 1024  # 500 MB
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_admin)])
 async def upload_file(file: UploadFile) -> dict:
     if file.content_type not in _ALLOWED:
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
